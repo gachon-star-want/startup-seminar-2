@@ -18,8 +18,10 @@
     "@neondatabase/serverless": "^1.1.0",
     "drizzle-orm": "^0.45.2",
     "isbot": "^5",
+    "pptx-preview": "^1.0.7",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
+    "react-pdf": "^11.0.0",
     "react-router": "^8.3.1"
   },
   "devDependencies": {

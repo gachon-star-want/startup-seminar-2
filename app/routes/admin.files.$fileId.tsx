@@ -20,11 +20,14 @@ export async function loader({ request, context, params }: Route.LoaderArgs) {
   const object = await env.FILES.get(file.r2Key);
   if (!object) throw new Response("저장된 파일이 없어요 (R2에서 삭제되었을 수 있어요)", { status: 404 });
 
+  // ?inline=1 → 브라우저에서 바로 표시(발표 모드·새 탭). 없으면 다운로드.
+  const inline = new URL(request.url).searchParams.get("inline") === "1";
+  const disposition = inline ? "inline" : "attachment";
   const encodedName = encodeURIComponent(file.filename);
   return new Response(object.body, {
     headers: {
       "Content-Type": file.mime || "application/octet-stream",
-      "Content-Disposition": `attachment; filename*=UTF-8''${encodedName}`,
+      "Content-Disposition": `${disposition}; filename*=UTF-8''${encodedName}`,
       "Cache-Control": "private, no-store",
     },
   });

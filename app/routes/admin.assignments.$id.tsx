@@ -87,12 +87,22 @@ export default function AdminAssignmentDetailRoute({ loaderData }: Route.Compone
           <IconArrowLeft />
           과제 관리
         </Link>
-        <div className="cluster">
-          <h1 className="page-head__title page-head__title--sm">{a.title}</h1>
-          <Badge tone={a.unit === "team" ? "indigo" : "gray"}>
-            {a.unit === "team" ? "팀 과제" : "개인 과제"}
-          </Badge>
-          <Badge tone="gray">제출 {loaderData.submissions.length}건</Badge>
+        <div className="cluster cluster--between">
+          <div className="cluster minw-0">
+            <h1 className="page-head__title page-head__title--sm ellipsis">{a.title}</h1>
+            <Badge tone={a.unit === "team" ? "indigo" : "gray"}>
+              {a.unit === "team" ? "팀 과제" : "개인 과제"}
+            </Badge>
+            <Badge tone="gray">제출 {loaderData.submissions.length}건</Badge>
+          </div>
+          {loaderData.submissions.length > 0 ? (
+            <Link
+              to={`/admin/assignments/${a.id}/present`}
+              className="btn btn--primary btn--sm flex-shrink-0"
+            >
+              ▶ 발표
+            </Link>
+          ) : null}
         </div>
         <p className="page-head__sub num">
           마감{" "}
