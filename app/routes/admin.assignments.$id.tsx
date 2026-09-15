@@ -81,16 +81,14 @@ export default function AdminAssignmentDetailRoute({ loaderData }: Route.Compone
   const a = loaderData.assignment;
 
   return (
-    <div className="stack-lg">
+    <div className="stack-xl">
       <div>
         <Link to="/admin/assignments" className="back-link">
           <IconArrowLeft />
           과제 관리
         </Link>
         <div className="cluster">
-          <h1 className="page-head__title" style={{ fontSize: "var(--t-xl)" }}>
-            {a.title}
-          </h1>
+          <h1 className="page-head__title page-head__title--sm">{a.title}</h1>
           <Badge tone={a.unit === "team" ? "indigo" : "gray"}>
             {a.unit === "team" ? "팀 과제" : "개인 과제"}
           </Badge>
@@ -111,18 +109,12 @@ export default function AdminAssignmentDetailRoute({ loaderData }: Route.Compone
 
       {loaderData.missing.length > 0 ? (
         <Card>
-          <h2 className="small" style={{ fontWeight: 800, color: "var(--danger)" }}>
-            미제출 ({loaderData.missing.length})
-          </h2>
-          <p className="small muted" style={{ marginTop: "0.5rem" }}>
-            {loaderData.missing.map((m) => m.label).join(" · ")}
-          </p>
+          <h2 className="small text-danger">미제출 ({loaderData.missing.length})</h2>
+          <p className="small muted mt-2">{loaderData.missing.map((m) => m.label).join(" · ")}</p>
         </Card>
       ) : (
         <Card>
-          <h2 className="small" style={{ fontWeight: 800, color: "var(--success)" }}>
-            전원 제출 완료 🎉
-          </h2>
+          <h2 className="small text-success">전원 제출 완료 🎉</h2>
         </Card>
       )}
 
@@ -133,8 +125,8 @@ export default function AdminAssignmentDetailRoute({ loaderData }: Route.Compone
           {loaderData.submissions.map((s) => (
             <Card key={s.id}>
               <div className="cluster cluster--between">
-                <div className="cluster">
-                  <strong style={{ fontSize: "var(--t-md)" }}>
+                <div className="cluster minw-0">
+                  <strong className="card__title">
                     {a.unit === "team" ? `${s.teamName ?? "팀명없음"} 팀` : s.userName}
                   </strong>
                   {a.unit === "team" ? <span className="small faint">제출자: {s.userName}</span> : null}
@@ -144,23 +136,23 @@ export default function AdminAssignmentDetailRoute({ loaderData }: Route.Compone
                 </span>
               </div>
               {s.content ? (
-                <p className="notice notice--neutral" style={{ whiteSpace: "pre-wrap", fontWeight: 400 }}>
+                <p className="notice notice--neutral notice-body">
                   {s.content}
                 </p>
               ) : null}
               {s.link ? (
                 <p className="small mt-2">
                   🔗{" "}
-                  <a href={s.link} target="_blank" rel="noreferrer" className="card__link">
+                  <a href={s.link} target="_blank" rel="noreferrer" className="link-url">
                     {s.link}
                   </a>
                 </p>
               ) : null}
               {s.files.length > 0 ? (
-                <ul className="stack-sm mt-2" style={{ listStyle: "none", margin: "0.5rem 0 0", padding: 0 }}>
+                <ul className="stack-sm mt-2 bare-list">
                   {s.files.map((f) => (
                     <li key={f.id} className="item-link">
-                      <span className="small" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      <span className="small ellipsis minw-0">
                         📄{" "}
                         <a href={`/admin/files/${f.id}`} target="_blank" rel="noreferrer" className="card__link">
                           {f.filename}

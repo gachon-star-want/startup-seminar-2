@@ -67,7 +67,7 @@ export default function BoardRoute({ loaderData }: Route.ComponentProps) {
           {loaderData.teams.map((t) => (
             <article key={t.id} className={`rank-card${t.rank === 1 ? " rank-card--top" : ""}`}>
               <div className="rank-card__head">
-                <div style={{ minWidth: 0 }}>
+                <div className="minw-0">
                   <div className="cluster">
                     <span
                       className={`rank-badge${t.rank <= 3 ? ` rank-badge--${t.rank}` : ""}`}
@@ -118,7 +118,7 @@ export default function BoardRoute({ loaderData }: Route.ComponentProps) {
 
               {t.memo?.trim() ? <p className="rank-memo">📝 {t.memo}</p> : null}
 
-              <p className="small faint right num" style={{ marginTop: "0.75rem" }}>
+              <p className="small faint right num mt-3">
                 최근 업데이트 {fmtKST(t.updatedAt, { month: "numeric", day: "numeric" })}
               </p>
             </article>

@@ -16,10 +16,14 @@ export async function loader({ request, context }: Route.LoaderArgs) {
     .from(attendanceSessions)
     .orderBy(desc(attendanceSessions.sessionDate));
 
-  const records = await db
-    .select()
-    .from(attendanceRecords)
-    .where(eq(attendanceRecords.userId, user.id));
+  const isProfessor = user.role === "professor";
+
+  const records = isProfessor
+    ? []
+    : await db
+        .select()
+        .from(attendanceRecords)
+        .where(eq(attendanceRecords.userId, user.id));
   const recordBySession = new Map(records.map((r) => [r.sessionId, r]));
 
   const rows = sessions.map((s) => {
@@ -35,7 +39,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
     };
   });
 
-  const counted = rows.filter((r) => !r.isFuture && r.status);
+  const counted = isProfessor ? [] : rows.filter((r) => !r.isFuture && r.status);
   const summary = {
     total: counted.length,
     present: counted.filter((r) => r.status === "present").length,
@@ -43,17 +47,21 @@ export async function loader({ request, context }: Route.LoaderArgs) {
     absent: counted.filter((r) => r.status === "absent").length,
   };
 
-  return { rows, summary };
+  return { rows, summary, isProfessor };
 }
 
 export default function AttendanceRoute({ loaderData }: Route.ComponentProps) {
-  const { rows, summary } = loaderData;
+  const { rows, summary, isProfessor } = loaderData;
 
   return (
     <div className="stack-xl">
       <PageHeader title="내 출석 이력" sub="매주 화요일 오전 10:00 수업 · 출석체크는 10:10까지" />
 
-      <div className="stat-row">
+      {isProfessor ? (
+        <EmptyState>교수 계정은 출석체크 대상이 아니에요. 학생들의 출석은 관리자 페이지에서 확인해 주세요.</EmptyState>
+      ) : (
+        <>
+          <div className="stat-row">
         <Stat value={summary.present} label="출석" tone="success" />
         <Stat value={summary.late} label="지각" tone="warning" />
         <Stat value={summary.absent} label="결석" tone="danger" />
@@ -104,12 +112,14 @@ export default function AttendanceRoute({ loaderData }: Route.ComponentProps) {
       )}
 
       <Card>
-        <p className="small muted" style={{ lineHeight: 1.75 }}>
+        <p className="small muted help-text">
           🕙 출석체크는 수업일 <strong>오전 10:00</strong>에 자동으로 열리고,{" "}
           <strong>10:10까지 출석</strong>, 그 이후 <strong>11:00까지는 지각</strong>으로 기록돼요.
           체크할 때마다 본인의 생일 4자리를 입력해야 해요.
         </p>
       </Card>
+        </>
+      )}
     </div>
   );
 }

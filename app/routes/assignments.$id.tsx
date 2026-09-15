@@ -209,16 +209,14 @@ export default function AssignmentDetailRoute({ loaderData }: Route.ComponentPro
   const dd = dDay(new Date(a.dueAt));
 
   return (
-    <div className="stack-lg">
+    <div className="stack-xl">
       <div>
         <Link to="/assignments" className="back-link">
           <IconArrowLeft />
           과제 목록
         </Link>
         <div className="cluster">
-          <h1 className="page-head__title" style={{ fontSize: "var(--t-xl)" }}>
-            {a.title}
-          </h1>
+          <h1 className="page-head__title page-head__title--sm">{a.title}</h1>
           <Badge tone={a.unit === "team" ? "indigo" : "gray"}>
             {a.unit === "team" ? "팀 과제" : "개인 과제"}
           </Badge>
@@ -241,9 +239,7 @@ export default function AssignmentDetailRoute({ loaderData }: Route.ComponentPro
           {a.unit === "team" && loaderData.myTeam ? ` · ${loaderData.myTeam.teamName} 팀으로 제출` : ""}
         </p>
         {a.description ? (
-          <p className="card small muted" style={{ lineHeight: 1.75, whiteSpace: "pre-wrap", marginTop: "0.875rem" }}>
-            {a.description}
-          </p>
+          <p className="card small muted help-text notice-body mt-3">{a.description}</p>
         ) : null}
       </div>
 
@@ -272,30 +268,27 @@ export default function AssignmentDetailRoute({ loaderData }: Route.ComponentPro
             <Card>
               <SectionTitle right={<Badge tone="green">제출 완료</Badge>}>내 제출</SectionTitle>
               {loaderData.submission.content ? (
-                <p
-                  className="notice notice--neutral"
-                  style={{ whiteSpace: "pre-wrap", fontWeight: 400 }}
-                >
+                <p className="notice notice--neutral notice-body">
                   {loaderData.submission.content}
                 </p>
               ) : null}
               {loaderData.submission.link ? (
                 <p className="small mt-2">
                   🔗{" "}
-                  <a href={loaderData.submission.link} target="_blank" rel="noreferrer" className="card__link">
+                  <a href={loaderData.submission.link} target="_blank" rel="noreferrer" className="link-url">
                     {loaderData.submission.link}
                   </a>
                 </p>
               ) : null}
               {loaderData.submission.files.length > 0 ? (
-                <ul className="stack-sm mt-3" style={{ listStyle: "none", margin: "0.75rem 0 0", padding: 0 }}>
+                <ul className="stack-sm mt-3 bare-list">
                   {loaderData.submission.files.map((f) => (
                     <li key={f.id} className="item-link">
-                      <span className="small" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      <span className="small ellipsis minw-0">
                         📄 {f.filename} <span className="faint">({formatBytes(f.size)})</span>
                       </span>
                       {!loaderData.closed ? (
-                        <Form method="post" className="shrink-0">
+                        <Form method="post" className="flex-shrink-0">
                           <input type="hidden" name="intent" value="deleteFile" />
                           <input type="hidden" name="fileId" value={f.id} />
                           <button type="submit" className="btn btn--danger btn--sm">
@@ -307,7 +300,7 @@ export default function AssignmentDetailRoute({ loaderData }: Route.ComponentPro
                   ))}
                 </ul>
               ) : null}
-              <p className="small faint right num" style={{ marginTop: "0.75rem" }}>
+              <p className="small faint right num mt-3">
                 마지막 수정{" "}
                 {fmtKST(new Date(loaderData.submission.updatedAt), {
                   month: "numeric",

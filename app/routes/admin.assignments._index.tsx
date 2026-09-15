@@ -1,4 +1,4 @@
-import { Link, useActionData } from "react-router";
+import { Form, Link, useActionData } from "react-router";
 import type { Route } from "./+types/admin.assignments._index";
 import { desc, eq, sql } from "drizzle-orm";
 import { assignments, submissions } from "~/db/schema";
@@ -72,7 +72,7 @@ export default function AdminAssignmentsRoute({ loaderData }: Route.ComponentPro
     <div className="stack-xl">
       <Card>
         <SectionTitle>과제 만들기</SectionTitle>
-        <form method="post">
+        <Form method="post">
           <input type="hidden" name="intent" value="create" />
           <Field label="제목" htmlFor="a-title">
             <input id="a-title" name="title" className="input" placeholder="예: 3주차 시장조사 리포트" required />
@@ -95,7 +95,7 @@ export default function AdminAssignmentsRoute({ loaderData }: Route.ComponentPro
           <button type="submit" className="btn btn--primary mt-4">
             과제 만들기
           </button>
-        </form>
+        </Form>
       </Card>
 
       {loaderData.assignments.length === 0 ? (
@@ -107,9 +107,9 @@ export default function AdminAssignmentsRoute({ loaderData }: Route.ComponentPro
           {loaderData.assignments.map((a) => (
             <Card key={a.id}>
               <div className="cluster cluster--between">
-                <div style={{ minWidth: 0 }}>
+                <div className="minw-0">
                   <div className="cluster">
-                    <Link to={`/admin/assignments/${a.id}`} className="card__link" style={{ fontSize: "var(--t-base)" }}>
+                    <Link to={`/admin/assignments/${a.id}`} className="link-title" title={a.title}>
                       {a.title}
                     </Link>
                     <Badge tone={a.unit === "team" ? "indigo" : "gray"}>
@@ -129,17 +129,17 @@ export default function AdminAssignmentsRoute({ loaderData }: Route.ComponentPro
                     })}
                   </p>
                 </div>
-                <div className="cluster" style={{ flexDirection: "column", alignItems: "flex-end" }}>
+                <div className="cluster cluster--col">
                   <Link to={`/admin/assignments/${a.id}`} className="card__link">
                     제출물 보기 →
                   </Link>
-                  <form method="post">
+                  <Form method="post">
                     <input type="hidden" name="intent" value="delete" />
                     <input type="hidden" name="assignmentId" value={a.id} />
                     <button type="submit" className="btn btn--danger btn--sm">
                       삭제
                     </button>
-                  </form>
+                  </Form>
                 </div>
               </div>
             </Card>

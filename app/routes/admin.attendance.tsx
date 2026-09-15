@@ -11,7 +11,9 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   const { db } = await requireAdmin(request, context);
 
   const sessions = await db.select().from(attendanceSessions).orderBy(asc(attendanceSessions.sessionDate));
-  const allUsers = (await db.select().from(users)).sort((a, b) => a.name.localeCompare(b.name, "ko"));
+  const allUsers = (await db.select().from(users))
+    .filter((u) => u.role !== "professor")
+    .sort((a, b) => a.name.localeCompare(b.name, "ko"));
   const records = await db
     .select({ sessionId: attendanceRecords.sessionId, userId: attendanceRecords.userId, status: attendanceRecords.status })
     .from(attendanceRecords);
@@ -83,6 +85,39 @@ export async function action({ request, context }: Route.ActionArgs) {
     return { ok: true };
   }
 
+  if (intent === "markAllPresent") {
+    const sessionId = String(form.get("sessionId") ?? "");
+    const [session] = await db
+      .select()
+      .from(attendanceSessions)
+      .where(eq(attendanceSessions.id, sessionId))
+      .limit(1);
+    if (!session) return { error: "수업 날짜를 찾을 수 없어요." };
+    if (sessionPhase(session, new Date()) === "scheduled") {
+      return { error: `${ymdLabel(session.sessionDate)} 은 아직 예정된 수업이에요.` };
+    }
+    const students = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.role, "student"));
+    if (students.length === 0) return { error: "학생 명단이 비어 있어요." };
+    await db
+      .insert(attendanceRecords)
+      .values(
+        students.map((s) => ({
+          sessionId,
+          userId: s.id,
+          status: "present",
+          source: "admin",
+        })),
+      )
+      .onConflictDoUpdate({
+        target: [attendanceRecords.sessionId, attendanceRecords.userId],
+        set: { status: "present", source: "admin", checkedAt: new Date() },
+      });
+    return { ok: true };
+  }
+
   return { error: "알 수 없는 요청이에요." };
 }
 
@@ -117,8 +152,35 @@ export default function AdminAttendanceRoute({ loaderData }: Route.ComponentProp
         <ErrorText>{actionData?.error}</ErrorText>
       </Card>
 
+      <Card>
+        <SectionTitle>한 번에 전원 출석 처리</SectionTitle>
+        <p className="small muted">
+          지난 수업 전체를 출석으로 일괄 처리할 때 써요 (학생 명단 전원 · 교수 제외). 개별 조정은
+          아래 그리드에서.
+        </p>
+        {loaderData.sessions.length === 0 ? (
+          <p className="small faint mt-3">수업 날짜를 먼저 추가해 주세요.</p>
+        ) : (
+          <Form method="post" className="cluster mt-3">
+            <input type="hidden" name="intent" value="markAllPresent" />
+            <select name="sessionId" className="input" style={{ flex: "1 1 10rem" }} required>
+              {loaderData.sessions.map((s) => (
+                <option key={s.id} value={s.id} disabled={s.phase === "scheduled"}>
+                  {s.label}
+                  {s.phase === "scheduled" ? " (예정)" : ""}
+                </option>
+              ))}
+            </select>
+            <button type="submit" className="btn btn--primary">
+              전원 출석 ✓
+            </button>
+          </Form>
+        )}
+        <ErrorText>{actionData?.error}</ErrorText>
+      </Card>
+
       <Card className="card--flush">
-        <div className="card__head" style={{ padding: "0.875rem 1rem 0", margin: 0 }}>
+        <div className="card__head card__head--flush">
           <h2 className="card__title">출석 현황 그리드</h2>
           <p className="small faint">셀을 누르면 없음 → 출석 → 지각 → 결석 → 없음 순서로 순환</p>
         </div>
@@ -134,9 +196,7 @@ export default function AdminAttendanceRoute({ loaderData }: Route.ComponentProp
                   <th>이름</th>
                   {loaderData.sessions.map((s) => (
                     <th key={s.id} style={{ textAlign: "center" }}>
-                      <div className="num" style={{ whiteSpace: "nowrap" }}>
-                        {s.label}
-                      </div>
+                      <div className="num">{s.label}</div>
                       <Form method="post" style={{ marginTop: "0.125rem" }}>
                         <input type="hidden" name="intent" value="deleteSession" />
                         <input type="hidden" name="sessionId" value={s.id} />
@@ -151,7 +211,7 @@ export default function AdminAttendanceRoute({ loaderData }: Route.ComponentProp
               <tbody>
                 {loaderData.users.map((u) => (
                   <tr key={u.id}>
-                    <td style={{ fontWeight: 700, whiteSpace: "nowrap" }}>{u.name}</td>
+                    <td className="att-grid__name">{u.name}</td>
                     {loaderData.sessions.map((s) => {
                       const status = loaderData.recordMap[`${s.id}:${u.id}`] ?? "none";
                       const isFuture = s.phase === "scheduled";

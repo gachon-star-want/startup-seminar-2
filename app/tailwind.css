@@ -120,6 +120,9 @@ body {
   font-family: var(--font-sans);
   font-size: var(--t-base);
   line-height: 1.6;
+  /* 한글은 단어 중간에서 끊지 않고, 넘치는 긴 단어만 최후에 줄바꿈 */
+  word-break: keep-all;
+  overflow-wrap: break-word;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -197,6 +200,33 @@ button {
 .mt-3 { margin-top: 0.75rem; }
 .mt-4 { margin-top: 1rem; }
 
+/* flex 자식이 내용 때문에 카드 밖으로 넘치지 않게 */
+.minw-0 { min-width: 0; }
+.flex-shrink-0 { flex-shrink: 0; }
+
+/* 장식 없는 리스트 (ul 리셋) */
+.bare-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* 안내 문단용 넉넉한 행간 */
+.help-text { line-height: 1.75; }
+
+/* 개행 유지 원문 (과제 설명 등) */
+.notice-body {
+  white-space: pre-wrap;
+  font-weight: 400;
+}
+
+/* 한 줄 말줄임 (파일명 등) */
+.ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ---------- 3. 레이아웃 프리미티브 ---------- */
 /* 세로 스택: .stack > * + * { margin-top } */
 .stack-xs > * + * { margin-top: 0.25rem; }
@@ -216,6 +246,16 @@ button {
 .cluster--between {
   justify-content: space-between;
 }
+
+/* 우측 정렬 세로 클러스터 (카드 액션 묶음) */
+.cluster--col {
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+/* 상태 색상 텍스트 */
+.text-danger { color: var(--danger); }
+.text-success { color: var(--success); }
 
 /* 2열 그리드 (모바일 1열) */
 .grid-2 {
@@ -255,6 +295,7 @@ button {
   gap: 0.5rem;
   padding: 0.5rem 0.75rem;
   padding-top: calc(0.5rem + env(safe-area-inset-top));
+  background: var(--surface); /* color-mix 미지원 브라우저 폴백 */
   background: color-mix(in srgb, var(--surface) 88%, transparent);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
@@ -270,10 +311,12 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
+  flex-shrink: 0;
   font-weight: 800;
   font-size: var(--t-md);
   letter-spacing: -0.02em;
   color: var(--text);
+  white-space: nowrap;
 }
 
 .logo:hover {
@@ -335,7 +378,8 @@ button {
   max-width: 9rem;
 }
 
-@media (max-width: 359px) {
+/* 사용자명: 좁은 화면에서는 로고 확보 우선 → 숨김 */
+@media (max-width: 419px) {
   .topbar__user { display: none; }
 }
 
@@ -348,6 +392,7 @@ button {
   z-index: 40;
   display: flex;
   padding-bottom: env(safe-area-inset-bottom);
+  background: var(--surface); /* color-mix 미지원 브라우저 폴백 */
   background: color-mix(in srgb, var(--surface) 92%, transparent);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
@@ -511,6 +556,11 @@ button {
   letter-spacing: -0.025em;
 }
 
+/* 인증/상세 등 좁은 컨텍스트용 축소 타이틀 */
+.page-head__title--sm {
+  font-size: var(--t-xl);
+}
+
 .page-head__sub {
   margin-top: 0.25rem;
   font-size: var(--t-sm);
@@ -553,6 +603,12 @@ button {
   margin-bottom: 0.875rem;
 }
 
+/* card--flush 안의 헤더 (테이블 상단) — 패딩은 위/좌우만 */
+.card__head--flush {
+  padding: 0.875rem 1rem 0;
+  margin: 0;
+}
+
 .card__title {
   font-size: var(--t-md);
   font-weight: 700;
@@ -562,6 +618,17 @@ button {
   font-size: var(--t-sm);
   font-weight: 600;
   white-space: nowrap;
+}
+
+/* 긴 URL 링크 — 어디서든 끊어 카드 밖으로 넘치지 않게 */
+.link-url {
+  display: inline-block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  font-size: var(--t-sm);
+  font-weight: 600;
+  min-width: 0;
 }
 
 .card__body--pad {
@@ -579,14 +646,20 @@ button {
   gap: 0.75rem;
 }
 
+/* 3개짜리는 항상 3열 (모바일에서 간격만 타이트하게) */
+.stat-row--3 {
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+}
+
 @media (min-width: 720px) {
   .stat-row {
     grid-template-columns: repeat(4, 1fr);
   }
-}
 
-.stat-row--3 {
-  grid-template-columns: repeat(3, 1fr);
+  .stat-row--3 {
+    gap: 0.75rem;
+  }
 }
 
 .stat {
@@ -753,6 +826,14 @@ button {
 .btn--sm {
   padding: 0.3125rem 0.75rem;
   font-size: var(--t-xs);
+}
+
+/* 버튼 안 아이콘 — 글자 크기에 맞춰 축소 */
+.btn svg,
+.back-link svg {
+  width: 1em;
+  height: 1em;
+  flex-shrink: 0;
 }
 
 .btn--primary {
@@ -1092,6 +1173,22 @@ select.input {
   color: var(--text-3);
 }
 
+/* 목록 제목 링크 (길어지면 한 줄 말줄임) */
+.link-title {
+  font-size: var(--t-base);
+  font-weight: 700;
+  color: var(--text);
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.link-title:hover {
+  color: var(--primary);
+}
+
 /* ---------- 14. 리더보드 ---------- */
 .rank-card {
   position: relative;
@@ -1137,6 +1234,12 @@ select.input {
 .rank-badge--3 { background: #fde8d7; color: #c2410c; }
 
 .rank-card__name {
+  font-size: var(--t-lg);
+  font-weight: 800;
+}
+
+/* 홈 카드 안 팀 이름 (리더보드 카드와 동일 모양) */
+.team-name {
   font-size: var(--t-lg);
   font-weight: 800;
 }
@@ -1306,6 +1409,7 @@ select.input {
   left: 0;
   z-index: 1;
   background: var(--surface);
+  box-shadow: 8px 0 12px -10px rgb(25 20 70 / 0.28);
 }
 
 .att-grid th:first-child {
@@ -1313,7 +1417,12 @@ select.input {
 }
 
 .att-grid tbody tr:hover td:first-child {
-  background: var(--surface);
+  background: var(--surface-2);
+}
+
+.att-grid__name {
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .cell-btn {
@@ -1411,6 +1520,16 @@ select.input {
   background: linear-gradient(135deg, var(--primary), #7c3aed);
   font-size: 24px;
   box-shadow: var(--shadow-2);
+}
+
+/* 에러 바운더리 카드 */
+.error-card {
+  text-align: center;
+  padding: 3rem 1.5rem;
+}
+
+.error-card__icon {
+  font-size: 2.5rem;
 }
 
 /* ---------- 20. 기타 ---------- */

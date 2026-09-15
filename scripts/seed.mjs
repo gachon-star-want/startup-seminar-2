@@ -21,8 +21,8 @@ function loadDatabaseUrl() {
   throw new Error("DATABASE_URL을 찾을 수 없어요. .env 파일을 확인해 주세요.");
 }
 
-const START = "2026-09-15"; // 화요일
-const END = "2026-12-15"; // 화요일
+const START = "2026-09-01"; // 화요일 — 1학기 첫 수업
+const END = "2026-12-08"; // 화요일 — 종강 (총 15회)
 const WINDOWS = { open: "10:00", late: "10:10", close: "11:00" };
 
 function tuesdays(startYmd, endYmd) {

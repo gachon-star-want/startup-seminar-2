@@ -1,9 +1,11 @@
 import type { SVGProps } from "react";
 
-/** 공통 아이콘 속성 — stroke 기반 라인 아이콘 */
+/** 공통 아이콘 속성 — stroke 기반 라인 아이콘 (기본 1em, 컨텍스트에서 크기 조정) */
 function iconProps(props: SVGProps<SVGSVGElement>) {
   return {
     viewBox: "0 0 24 24",
+    width: "1em",
+    height: "1em",
     fill: "none",
     stroke: "currentColor",
     strokeWidth: 1.8,

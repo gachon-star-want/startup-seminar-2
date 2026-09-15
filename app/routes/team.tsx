@@ -30,7 +30,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   if (!membership) return { team: null };
 
   const members = await db
-    .select({ userId: users.id, name: users.name, studentNumber: users.studentNumber, role: teamMembers.role })
+    .select({ userId: users.id, name: users.name, role: teamMembers.role })
     .from(teamMembers)
     .innerJoin(users, eq(teamMembers.userId, users.id))
     .where(eq(teamMembers.teamId, membership.team.id))
@@ -292,7 +292,6 @@ export default function TeamRoute({ loaderData }: Route.ComponentProps) {
           {team.members.map((m) => (
             <li key={m.userId}>
               <span className="member-list__name">{m.name}</span>
-              <span className="member-list__id num">{m.studentNumber}</span>
               {m.role === "leader" && <Badge tone="indigo">팀장</Badge>}
               {m.userId === team.myUserId && <Badge tone="gray">나</Badge>}
             </li>

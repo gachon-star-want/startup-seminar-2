@@ -11,7 +11,8 @@
     "typecheck": "wrangler types && react-router typegen && tsc",
     "cf-typegen": "wrangler types",
     "db:push": "drizzle-kit push",
-    "db:seed": "node scripts/seed.mjs"
+    "db:seed": "node scripts/seed.mjs",
+    "db:seed:users": "node scripts/seed-users.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

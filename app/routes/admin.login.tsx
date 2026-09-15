@@ -54,9 +54,7 @@ export default function AdminLoginRoute() {
           🔐
         </div>
         <div style={{ textAlign: "center", marginTop: "1rem" }}>
-          <h1 className="page-head__title" style={{ fontSize: "var(--t-xl)" }}>
-            관리자
-          </h1>
+          <h1 className="page-head__title page-head__title--sm">관리자</h1>
           <p className="muted small" style={{ marginTop: "0.375rem" }}>
             관리자 비밀번호를 입력해 주세요.
           </p>

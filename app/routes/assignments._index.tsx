@@ -54,9 +54,9 @@ export default function AssignmentsRoute({ loaderData }: Route.ComponentProps) {
     return (
       <li key={a.id}>
         <Link to={`/assignments/${a.id}`} className="item-link">
-          <div style={{ minWidth: 0 }}>
+          <div className="minw-0">
             <div className="cluster">
-              <span className="item-link__title">{a.title}</span>
+              <span className="item-link__title" title={a.title}>{a.title}</span>
               <Badge tone={a.unit === "team" ? "indigo" : "gray"}>
                 {a.unit === "team" ? "팀 과제" : "개인 과제"}
               </Badge>
@@ -91,7 +91,7 @@ export default function AssignmentsRoute({ loaderData }: Route.ComponentProps) {
   };
 
   return (
-    <div className="stack-lg">
+    <div className="stack-xl">
       <PageHeader title="과제" sub="텍스트 · 링크 · 파일로 제출할 수 있어요" />
 
       <section>
@@ -99,7 +99,7 @@ export default function AssignmentsRoute({ loaderData }: Route.ComponentProps) {
         {open.length === 0 ? (
           <EmptyState>진행 중인 과제가 없어요.</EmptyState>
         ) : (
-          <ul className="stack-sm" style={{ listStyle: "none", margin: 0, padding: 0 }}>
+          <ul className="stack-sm bare-list">
             {open.map(renderItem)}
           </ul>
         )}
@@ -108,14 +108,14 @@ export default function AssignmentsRoute({ loaderData }: Route.ComponentProps) {
       {closed.length > 0 ? (
         <section>
           <h2 className="section-label">마감됨</h2>
-          <ul className="stack-sm" style={{ listStyle: "none", margin: 0, padding: 0 }}>
+          <ul className="stack-sm bare-list">
             {closed.map(renderItem)}
           </ul>
         </section>
       ) : null}
 
       <Card>
-        <p className="small muted" style={{ lineHeight: 1.75 }}>
+        <p className="small muted help-text">
           📎 텍스트·링크·파일(PPT/PDF 등, 파일당 최대 20MB)로 제출할 수 있어요. 팀 과제는 팀원 누구나
           제출/수정 가능하고 조당 1건으로 기록돼요.
         </p>

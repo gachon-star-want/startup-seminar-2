@@ -5,11 +5,16 @@ export const users = pgTable(
   {
     id: uuid("id").defaultRandom().primaryKey(),
     name: varchar("name", { length: 60 }).notNull(),
-    studentNumber: varchar("student_number", { length: 30 }).notNull(),
-    birth4: varchar("birth4", { length: 4 }).notNull(),
+    studentNumber: varchar("student_number", { length: 30 }),
+    birth4: varchar("birth4", { length: 4 }),
+    // student | professor
+    role: varchar("role", { length: 16 }).notNull().default("student"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
-  (t) => [uniqueIndex("users_student_number_key").on(t.studentNumber)],
+  (t) => [
+    uniqueIndex("users_student_number_key").on(t.studentNumber),
+    uniqueIndex("users_name_key").on(t.name),
+  ],
 );
 
 export const teams = pgTable(

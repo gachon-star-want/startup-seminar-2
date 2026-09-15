@@ -15,8 +15,9 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 
   const allTeams = await db.select().from(teams);
   const sessions = await db.select().from(attendanceSessions);
+  const students = allUsers.filter((u) => u.role !== "professor");
 
-  // 오늘 세션 출석 요약
+  // 오늘 세션 출석 요약 (학생만 집계)
   const today = kstYMD();
   const [todaySession] = await db
     .select()
@@ -33,7 +34,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
     let present = 0;
     let late = 0;
     let absent = 0;
-    for (const u of allUsers) {
+    for (const u of students) {
       const s = recordByUser.get(u.id);
       if (s === "present") present++;
       else if (s === "late") late++;
@@ -44,7 +45,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   }
 
   return {
-    userCount: allUsers.length,
+    studentCount: students.length,
     teamCount: allTeams.length,
     sessionCount: sessions.length,
     todaySummary,
@@ -52,11 +53,13 @@ export async function loader({ request, context }: Route.LoaderArgs) {
       .map((u) => ({
         id: u.id,
         name: u.name,
-        studentNumber: u.studentNumber,
+        role: u.role,
         teamName: teamByUser.get(u.id) ?? null,
-        createdAt: u.createdAt.toISOString(),
       }))
-      .sort((a, b) => a.name.localeCompare(b.name, "ko")),
+      .sort((a, b) => {
+        if (a.role !== b.role) return a.role === "professor" ? -1 : 1;
+        return a.name.localeCompare(b.name, "ko");
+      }),
   };
 }
 
@@ -64,7 +67,7 @@ export default function AdminIndexRoute({ loaderData }: Route.ComponentProps) {
   return (
     <div className="stack-xl">
       <div className="stat-row stat-row--3">
-        <Stat value={loaderData.userCount} label="학생 🧑‍🎓" />
+        <Stat value={loaderData.studentCount} label="학생 🧑‍🎓" />
         <Stat value={loaderData.teamCount} label="팀 🤝" />
         <Stat value={loaderData.sessionCount} label="수업 일정 📅" />
       </div>
@@ -78,9 +81,9 @@ export default function AdminIndexRoute({ loaderData }: Route.ComponentProps) {
               </Link>
             }
           >
-            오늘 출석 현황
+            오늘 출석 현황 (학생 {loaderData.studentCount}명)
           </SectionTitle>
-          <div className="stat-row">
+          <div className="stat-row stat-row--3">
             <Stat value={loaderData.todaySummary.present} label="출석" tone="success" />
             <Stat value={loaderData.todaySummary.late} label="지각" tone="warning" />
             <Stat value={loaderData.todaySummary.absent} label="결석" tone="danger" />
@@ -91,15 +94,15 @@ export default function AdminIndexRoute({ loaderData }: Route.ComponentProps) {
       )}
 
       <Card className="card--flush">
-        <div className="card__head" style={{ padding: "0.875rem 1rem 0", margin: 0 }}>
-          <h2 className="card__title">학생 명단 ({loaderData.users.length}명)</h2>
+        <div className="card__head card__head--flush">
+          <h2 className="card__title">명단 ({loaderData.users.length}명)</h2>
         </div>
         <div className="table-wrap">
           <table className="table table--stack">
             <thead>
               <tr>
                 <th>이름</th>
-                <th>학번</th>
+                <th>구분</th>
                 <th>팀</th>
               </tr>
             </thead>
@@ -109,8 +112,12 @@ export default function AdminIndexRoute({ loaderData }: Route.ComponentProps) {
                   <td data-label="이름" style={{ fontWeight: 700 }}>
                     {u.name}
                   </td>
-                  <td data-label="학번" className="muted num">
-                    {u.studentNumber}
+                  <td data-label="구분" className="muted">
+                    {u.role === "professor" ? (
+                      <span className="badge badge--indigo">교수</span>
+                    ) : (
+                      <span className="faint">학생</span>
+                    )}
                   </td>
                   <td data-label="팀" className="muted">
                     {u.teamName ?? <span className="faint">없음</span>}

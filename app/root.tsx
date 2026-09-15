@@ -259,29 +259,14 @@ export function ErrorBoundary() {
   return (
     <Layout>
       <div className="app-shell">
-        <main
-          className="main main--wide"
-          style={{ maxWidth: "28rem", margin: "0 auto" }}
-        >
-          <div
-            className="card"
-            style={{ textAlign: "center", padding: "3rem 1.5rem" }}
-          >
-            <div style={{ fontSize: "2.5rem" }}>😵</div>
-            <h1
-              className="page-head__title"
-              style={{ marginTop: "1rem", fontSize: "var(--t-xl)" }}
-            >
-              문제가 발생했어요
-            </h1>
-            <p className="muted small" style={{ marginTop: "0.5rem" }}>
-              {message}
-            </p>
-            <Link
-              to="/"
-              className="btn btn--primary"
-              style={{ marginTop: "1.5rem" }}
-            >
+        <main className="main main--wide auth-wrap">
+          <div className="card error-card">
+            <div className="error-card__icon" aria-hidden>
+              😵
+            </div>
+            <h1 className="page-head__title page-head__title--sm">문제가 발생했어요</h1>
+            <p className="muted small mt-2">{message}</p>
+            <Link to="/" className="btn btn--primary mt-4">
               홈으로
             </Link>
           </div>

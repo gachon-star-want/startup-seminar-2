@@ -126,6 +126,8 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 
   return {
     userName: user.name,
+    isProfessor: user.role === "professor",
+    birth4Set: Boolean(user.birth4),
     todayLabel: fmtKSTFull(now),
     attendance: focus
       ? {
@@ -165,8 +167,21 @@ export async function action({ request, context }: Route.ActionArgs) {
     return data({ error: "이미 출석체크 했어요!" }, { status: 400 });
   }
 
-  if (!/^\d{4}$/.test(birth4) || birth4 !== user.birth4) {
-    return data({ error: "생일 4자리(MMDD)가 일치하지 않아요." }, { status: 400 });
+  if (user.role === "professor") {
+    return data({ error: "교수 계정은 출석 대상이 아니에요." }, { status: 400 });
+  }
+
+  if (!/^\d{4}$/.test(birth4)) {
+    return data({ error: "생일 4자리(MMDD)를 숫자 4자리로 입력해 주세요." }, { status: 400 });
+  }
+
+  if (user.birth4) {
+    if (birth4 !== user.birth4) {
+      return data({ error: "생일 4자리(MMDD)가 일치하지 않아요." }, { status: 400 });
+    }
+  } else {
+    // 첫 출석체크 — 이번에 입력한 생일 4자리를 본인 확인용으로 등록
+    await db.update(users).set({ birth4 }).where(eq(users.id, user.id));
   }
 
   const phase = sessionPhase(session);
@@ -209,14 +224,14 @@ function ddayFromLabel(label: string): number | null {
 }
 
 /** 생일 4자리 인라인 폼 (출석/지각 공통) */
-function BirthForm({ sessionId, warn }: { sessionId: string; warn?: boolean }) {
+function BirthForm({ sessionId, warn, firstTime }: { sessionId: string; warn?: boolean; firstTime?: boolean }) {
   return (
     <Form method="post" className="cluster mt-3 fade-in">
       <input type="hidden" name="sessionId" value={sessionId} />
       <input
         name="birth4"
         className="input input--birth num"
-        placeholder="생일 4자리 (MMDD)"
+        placeholder={firstTime ? "생일 4자리 등록 (MMDD)" : "생일 4자리 (MMDD)"}
         inputMode="numeric"
         maxLength={4}
         required
@@ -258,7 +273,12 @@ export default function IndexRoute({ loaderData }: Route.ComponentProps) {
           </div>
 
           <div className="hero__body">
-            {a.my ? (
+            {loaderData.isProfessor ? (
+              <p className="notice notice--neutral">
+                🧑‍🏫 교수 계정이에요 — 출석체크 대상에서는 제외돼요. 학생들의 출석은 관리자
+                페이지에서 확인할 수 있어요.
+              </p>
+            ) : a.my ? (
               <div className="done-box">
                 <span className="done-box__icon" aria-hidden>
                   ✅
@@ -282,7 +302,7 @@ export default function IndexRoute({ loaderData }: Route.ComponentProps) {
                     ✋ 출석체크하기
                   </button>
                 ) : (
-                  <BirthForm sessionId={a.sessionId} />
+                  <BirthForm sessionId={a.sessionId} firstTime={!loaderData.birth4Set} />
                 )}
               </div>
             ) : a.isToday && a.phase === "late" ? (
@@ -296,7 +316,7 @@ export default function IndexRoute({ loaderData }: Route.ComponentProps) {
                     지각이라도 체크하기
                   </button>
                 ) : (
-                  <BirthForm sessionId={a.sessionId} warn />
+                  <BirthForm sessionId={a.sessionId} warn firstTime={!loaderData.birth4Set} />
                 )}
               </div>
             ) : a.isToday && (a.phase === "scheduled" || a.phase === null) ? (
@@ -351,7 +371,7 @@ export default function IndexRoute({ loaderData }: Route.ComponentProps) {
           ) : (
             <div className="stack-md">
               <div className="cluster cluster--between">
-                <strong style={{ fontSize: "var(--t-lg)", fontWeight: 800 }}>{team.name}</strong>
+                <strong className="team-name">{team.name}</strong>
                 <Badge tone="indigo">
                   {team.score} / {MAX_TEAM_SCORE}점
                 </Badge>
@@ -372,7 +392,7 @@ export default function IndexRoute({ loaderData }: Route.ComponentProps) {
               {team.missing.length === 0 ? (
                 <p className="notice notice--success">🎉 모든 항목 완료!</p>
               ) : (
-                <ul className="stack-xs small muted" style={{ listStyle: "none", margin: 0, padding: 0 }}>
+                <ul className="stack-xs small muted bare-list">
                   {team.missing.map((m) => (
                     <li key={m}>· {m}</li>
                   ))}
@@ -396,13 +416,13 @@ export default function IndexRoute({ loaderData }: Route.ComponentProps) {
           {loaderData.assignments.length === 0 ? (
             <EmptyState>진행 중인 과제가 없어요.</EmptyState>
           ) : (
-            <ul className="stack-sm" style={{ listStyle: "none", margin: 0, padding: 0 }}>
+            <ul className="stack-sm bare-list">
               {loaderData.assignments.map((as) => {
                 const dd = dDay(as.dueAt);
                 return (
                   <li key={as.id}>
                     <Link to={`/assignments/${as.id}`} className="item-link">
-                      <div style={{ minWidth: 0 }}>
+                      <div className="minw-0">
                         <div className="item-link__title">{as.title}</div>
                         <div className="item-link__meta num">
                           {as.unit === "team" ? "팀 과제" : "개인 과제"} · 마감{" "}
