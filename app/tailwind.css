@@ -281,6 +281,8 @@ button {
 }
 
 .main--wide {
+  /* 그리드 아이템일 때 margin:auto가 stretch를 끄고 fit-content로 줄어드는 것을 방지 */
+  width: 100%;
   max-width: 1160px;
   margin: 0 auto;
 }
@@ -956,6 +958,23 @@ select.input {
   letter-spacing: 0.08em;
 }
 
+/* 폼 한 행: input의 width:100%를 풀어 요소를 나란히 배치 (날짜+비고+버튼 등) */
+.form-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.form-row .input {
+  width: auto;
+}
+
+/* 남는 폭을 채우는 입력 (비고 등) */
+.form-row .input--grow {
+  flex: 1 1 10rem;
+}
+
 .hint {
   margin-top: 0.375rem;
   font-size: var(--t-xs);
@@ -1204,34 +1223,6 @@ select.input {
   border-color: var(--primary-border);
   box-shadow: var(--shadow-2);
 }
-
-.rank-card--top {
-  border-color: var(--primary-border);
-}
-
-.rank-card__head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.75rem;
-}
-
-.rank-badge {
-  display: grid;
-  place-items: center;
-  width: 2rem;
-  height: 2rem;
-  flex-shrink: 0;
-  border-radius: var(--radius-full);
-  background: var(--surface-3);
-  color: var(--text-2);
-  font-weight: 800;
-  font-size: var(--t-sm);
-}
-
-.rank-badge--1 { background: #fef3c7; color: #b45309; }
-.rank-badge--2 { background: var(--surface-3); color: var(--text-2); }
-.rank-badge--3 { background: #fde8d7; color: #c2410c; }
 
 .rank-card__name {
   font-size: var(--t-lg);

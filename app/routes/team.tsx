@@ -6,7 +6,6 @@ import { teamMembers, teams, users } from "~/db/schema";
 import { requireUser } from "~/lib/session";
 import { randomInviteCode } from "~/lib/auth";
 import { BUSINESS_STATUS_LABELS, MAIL_ORDER_STATUS_LABELS, SALES_CHANNEL_OPTIONS } from "~/lib/constants";
-import { teamScore, MAX_TEAM_SCORE } from "~/lib/score";
 import { IconCopy } from "~/components/icons";
 import {
   Badge,
@@ -48,7 +47,6 @@ export async function loader({ request, context }: Route.LoaderArgs) {
       memo: membership.team.memo,
       myRole: membership.role,
       myUserId: user.id,
-      score: teamScore(membership.team),
       members,
     },
   };
@@ -255,14 +253,7 @@ export default function TeamRoute({ loaderData }: Route.ComponentProps) {
 
   return (
     <div className="stack-xl">
-      <PageHeader
-        title="내 팀"
-        right={
-          <Badge tone="indigo">
-            {team.score} / {MAX_TEAM_SCORE}점
-          </Badge>
-        }
-      />
+      <PageHeader title="내 팀" />
       <ErrorText>{actionData?.error}</ErrorText>
 
       {/* 팀 정보 + 멤버 */}
@@ -302,7 +293,7 @@ export default function TeamRoute({ loaderData }: Route.ComponentProps) {
       {/* 팀 정보 수정 (팀원 누구나) */}
       <Card>
         <SectionTitle>팀 정보 업데이트</SectionTitle>
-        <p className="small muted">리더보드에 반영돼요! 팀원 누구나 업데이트할 수 있어요.</p>
+        <p className="small muted">팀 정보는 리더보드에 표시돼요. 팀원 누구나 업데이트할 수 있어요.</p>
         <Form method="post" className="mt-4">
           <input type="hidden" name="intent" value="update" />
 

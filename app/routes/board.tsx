@@ -3,9 +3,8 @@ import { eq } from "drizzle-orm";
 import { teamMembers, teams, users } from "~/db/schema";
 import { requireUser } from "~/lib/session";
 import { BUSINESS_STATUS_LABELS, MAIL_ORDER_STATUS_LABELS } from "~/lib/constants";
-import { teamScore, MAX_TEAM_SCORE } from "~/lib/score";
 import { fmtKST } from "~/lib/time";
-import { Badge, EmptyState, MilestoneBadge, PageHeader } from "~/components/ui";
+import { EmptyState, MilestoneBadge, PageHeader } from "~/components/ui";
 
 export async function loader({ request, context }: Route.LoaderArgs) {
   const { db } = await requireUser(request, context);
@@ -23,7 +22,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
     membersByTeam.set(m.teamId, list);
   }
 
-  const ranked = allTeams
+  const teamsWithMembers = allTeams
     .map((t) => ({
       id: t.id,
       name: t.name,
@@ -34,64 +33,27 @@ export async function loader({ request, context }: Route.LoaderArgs) {
       memo: t.memo,
       updatedAt: t.updatedAt,
       members: membersByTeam.get(t.id) ?? [],
-      score: teamScore(t),
     }))
-    .sort((a, b) => b.score - a.score || b.updatedAt.getTime() - a.updatedAt.getTime());
+    .sort((a, b) => a.name.localeCompare(b.name, "ko"));
 
-  let lastScore: number | null = null;
-  let lastRank = 0;
-  const withRank = ranked.map((t, i) => {
-    const rank = t.score === lastScore ? lastRank : i + 1;
-    lastScore = t.score;
-    lastRank = rank;
-    return { ...t, rank };
-  });
-
-  return { teams: withRank };
+  return { teams: teamsWithMembers };
 }
-
-const medals = ["🥇", "🥈", "🥉"];
 
 export default function BoardRoute({ loaderData }: Route.ComponentProps) {
   return (
     <div className="stack-xl">
-      <PageHeader
-        title="리더보드 🏆"
-        sub={`아이템 확정 1점 · 판매 채널 확정 1점 · 사업자등록(신청중 1/완료 2점) · 통신판매업신고(신고중 1/완료 2점) = 최대 ${MAX_TEAM_SCORE}점`}
-      />
+      <PageHeader title="리더보드 🏆" sub="우리 반 팀 현황을 한눈에 모아 봤어요" />
 
       {loaderData.teams.length === 0 ? (
         <EmptyState>아직 팀이 없어요. 첫 팀을 만들어 보세요!</EmptyState>
       ) : (
         <div className="grid-2 rank-list">
           {loaderData.teams.map((t) => (
-            <article key={t.id} className={`rank-card${t.rank === 1 ? " rank-card--top" : ""}`}>
-              <div className="rank-card__head">
-                <div className="minw-0">
-                  <div className="cluster">
-                    <span
-                      className={`rank-badge${t.rank <= 3 ? ` rank-badge--${t.rank}` : ""}`}
-                      aria-label={`${t.rank}위`}
-                    >
-                      {t.rank <= 3 ? medals[t.rank - 1] : t.rank}
-                    </span>
-                    <h3 className="rank-card__name">{t.name}</h3>
-                  </div>
-                  <p className="rank-card__members">
-                    {t.members.length > 0 ? t.members.join(" · ") : "1인 팀"}
-                  </p>
-                </div>
-                <Badge tone="indigo">
-                  {t.score} / {MAX_TEAM_SCORE}점
-                </Badge>
-              </div>
-
-              <div className="progress mt-3">
-                <div
-                  className="progress__bar"
-                  style={{ width: `${(t.score / MAX_TEAM_SCORE) * 100}%` }}
-                />
-              </div>
+            <article key={t.id} className="rank-card">
+              <h3 className="rank-card__name">{t.name}</h3>
+              <p className="rank-card__members">
+                {t.members.length > 0 ? t.members.join(" · ") : "1인 팀"}
+              </p>
 
               <dl>
                 <div className="row">

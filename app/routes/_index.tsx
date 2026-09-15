@@ -17,7 +17,6 @@ import {
   BUSINESS_STATUS_LABELS,
   MAIL_ORDER_STATUS_LABELS,
 } from "~/lib/constants";
-import { teamScore, MAX_TEAM_SCORE } from "~/lib/score";
 import { dDay, fmtKST, fmtKSTFull, kstYMD, sessionPhase, ymdLabel, type SessionPhase } from "~/lib/time";
 import { LiveCountdown } from "~/components/countdown";
 import {
@@ -73,7 +72,6 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 
   let teamInfo: {
     name: string;
-    score: number;
     members: string[];
     role: string;
     missing: string[];
@@ -94,7 +92,6 @@ export async function loader({ request, context }: Route.LoaderArgs) {
       missing.push(`통신판매업신고 ${MAIL_ORDER_STATUS_LABELS[t.mailOrderStatus]}`);
     teamInfo = {
       name: t.name,
-      score: teamScore(t),
       members: memberRows.map((r) => r.userName),
       role: membership.role,
       missing,
@@ -370,25 +367,7 @@ export default function IndexRoute({ loaderData }: Route.ComponentProps) {
             </EmptyState>
           ) : (
             <div className="stack-md">
-              <div className="cluster cluster--between">
-                <strong className="team-name">{team.name}</strong>
-                <Badge tone="indigo">
-                  {team.score} / {MAX_TEAM_SCORE}점
-                </Badge>
-              </div>
-              <div
-                className="progress"
-                role="progressbar"
-                aria-valuenow={team.score}
-                aria-valuemin={0}
-                aria-valuemax={MAX_TEAM_SCORE}
-                aria-label="팀 진행도"
-              >
-                <div
-                  className="progress__bar"
-                  style={{ width: `${(team.score / MAX_TEAM_SCORE) * 100}%` }}
-                />
-              </div>
+              <strong className="team-name">{team.name}</strong>
               {team.missing.length === 0 ? (
                 <p className="notice notice--success">🎉 모든 항목 완료!</p>
               ) : (

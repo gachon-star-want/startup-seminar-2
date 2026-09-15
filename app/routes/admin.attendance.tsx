@@ -141,10 +141,10 @@ export default function AdminAttendanceRoute({ loaderData }: Route.ComponentProp
         <p className="small muted">
           추가한 날짜에 자동으로 오전 10:00~10:10 출석 / 10:10~11:00 지각 창이 열려요 (한국 시간 기준).
         </p>
-        <Form method="post" className="cluster mt-3">
+        <Form method="post" className="form-row mt-3">
           <input type="hidden" name="intent" value="addSession" />
-          <input type="date" name="date" className="input num" style={{ flex: "0 0 auto" }} required />
-          <input name="note" className="input" placeholder="비고 (선택, 예: 중간발표)" style={{ flex: "1 1 10rem" }} />
+          <input type="date" name="date" className="input num" required />
+          <input name="note" className="input input--grow" placeholder="비고 (선택, 예: 중간발표)" />
           <button type="submit" className="btn btn--primary">
             추가
           </button>
@@ -161,9 +161,9 @@ export default function AdminAttendanceRoute({ loaderData }: Route.ComponentProp
         {loaderData.sessions.length === 0 ? (
           <p className="small faint mt-3">수업 날짜를 먼저 추가해 주세요.</p>
         ) : (
-          <Form method="post" className="cluster mt-3">
+          <Form method="post" className="form-row mt-3">
             <input type="hidden" name="intent" value="markAllPresent" />
-            <select name="sessionId" className="input" style={{ flex: "1 1 10rem" }} required>
+            <select name="sessionId" className="input input--grow" required>
               {loaderData.sessions.map((s) => (
                 <option key={s.id} value={s.id} disabled={s.phase === "scheduled"}>
                   {s.label}
