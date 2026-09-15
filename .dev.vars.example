@@ -1,0 +1,5 @@
+# 로컬 개발용 시크릿 (워커 런타임에서 읽음) — git에 절대 커밋 금지
+# 실제 배포 시 값들은 `wrangler secret put` 으로 설정함
+DATABASE_URL=postgresql://user:password@ep-xxxx.neon.tech/neondb?sslmode=require
+SESSION_SECRET=아무_랜덤_문자열
+ADMIN_PASSWORD=0806
