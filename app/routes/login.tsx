@@ -6,7 +6,7 @@ import { getCloudflare } from "~/lib/env";
 import { getDb } from "~/db";
 import { cookieHeader, makeSessionToken, SESSION_COOKIE } from "~/lib/auth";
 import { sessionSecret } from "~/lib/session";
-import { Card, ErrorText, inputClass, labelClass, btnPrimary } from "~/components/ui";
+import { Card, ErrorText, Field, PageHeader } from "~/components/ui";
 
 export async function action({ request, context }: Route.ActionArgs) {
   const { env } = getCloudflare(context);
@@ -65,50 +65,53 @@ export default function LoginRoute() {
   const busy = navigation.state === "submitting";
 
   return (
-    <div className="mx-auto max-w-md py-8">
+    <div className="auth-wrap">
       <Card>
-        <h1 className="text-xl font-bold">로그인 / 회원가입</h1>
-        <p className="mt-1 text-sm leading-relaxed text-slate-500">
-          <strong>처음</strong>이면 생일 4자리까지 입력하면 바로 가입돼요.
-          <br />
-          이미 가입했다면 <strong>이름 + 학번</strong>만 입력하면 돼요.
-        </p>
-        <Form method="post" className="mt-5 space-y-4">
-          <div>
-            <label className={labelClass} htmlFor="name">
-              이름
-            </label>
-            <input id="name" name="name" className={inputClass} placeholder="홍길동" required />
-          </div>
-          <div>
-            <label className={labelClass} htmlFor="studentNumber">
-              학번
-            </label>
+        <div className="auth-mark" aria-hidden>
+          🚀
+        </div>
+        <div style={{ textAlign: "center", marginTop: "1rem" }}>
+          <h1 className="page-head__title" style={{ fontSize: "var(--t-xl)" }}>
+            로그인 / 회원가입
+          </h1>
+          <p className="muted small" style={{ marginTop: "0.375rem" }}>
+            <strong>처음</strong>이면 생일 4자리까지 입력하면 바로 가입돼요.
+            <br />
+            이미 가입했다면 <strong>이름 + 학번</strong>만 입력하면 돼요.
+          </p>
+        </div>
+
+        <Form method="post" className="mt-4">
+          <Field label="이름" htmlFor="name">
+            <input id="name" name="name" className="input" placeholder="홍길동" required />
+          </Field>
+          <Field label="학번" htmlFor="studentNumber">
             <input
               id="studentNumber"
               name="studentNumber"
-              className={inputClass}
+              className="input num"
               placeholder="202612345"
               inputMode="numeric"
               required
             />
-          </div>
-          <div>
-            <label className={labelClass} htmlFor="birth4">
-              생일 4자리 (첫 가입 때만 필요 · MMDD)
-            </label>
+          </Field>
+          <Field
+            label="생일 4자리 (첫 가입 때만 필요 · MMDD)"
+            htmlFor="birth4"
+            hint="출석체크 본인 확인용으로 쓰여요. 기존 회원은 비워둬도 돼요."
+          >
             <input
               id="birth4"
               name="birth4"
-              className={inputClass}
+              className="input num"
               placeholder="0415"
               inputMode="numeric"
               maxLength={4}
               pattern="\d{4}"
             />
-          </div>
+          </Field>
           <ErrorText>{actionData?.error}</ErrorText>
-          <button type="submit" className={`${btnPrimary} w-full`} disabled={busy}>
+          <button type="submit" className="btn btn--primary btn--block btn--lg mt-4" disabled={busy}>
             {busy ? "처리 중..." : "입장하기"}
           </button>
         </Form>

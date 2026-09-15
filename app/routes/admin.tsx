@@ -2,6 +2,7 @@ import { Form, NavLink, Outlet, redirect } from "react-router";
 import type { Route } from "./+types/admin";
 import { isAdmin } from "~/lib/session";
 import { ADMIN_COOKIE, clearCookieHeader } from "~/lib/auth";
+import { PageHeader } from "~/components/ui";
 
 export async function loader({ request, context }: Route.LoaderArgs) {
   return { authed: await isAdmin(request, context) };
@@ -26,33 +27,28 @@ const tabs = [
 
 export default function AdminRoute({ loaderData }: Route.ComponentProps) {
   return (
-    <div className="space-y-6">
+    <div className="stack-lg">
       {loaderData.authed ? (
         <>
-          <div className="flex items-center justify-between">
-            <h1 className="text-2xl font-extrabold tracking-tight">관리자</h1>
-            <Form method="post" action="/admin">
-              <input type="hidden" name="intent" value="logout" />
-              <button
-                type="submit"
-                className="rounded-lg px-2.5 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100"
-              >
-                관리자 로그아웃
-              </button>
-            </Form>
-          </div>
+          <PageHeader
+            title="관리자"
+            right={
+              <Form method="post" action="/admin">
+                <input type="hidden" name="intent" value="logout" />
+                <button type="submit" className="btn btn--ghost btn--sm">
+                  관리자 로그아웃
+                </button>
+              </Form>
+            }
+          />
 
-          <nav className="flex gap-1 rounded-xl bg-slate-100 p-1">
+          <nav className="tabs" aria-label="관리자 메뉴">
             {tabs.map((t) => (
               <NavLink
                 key={t.to}
                 to={t.to}
                 end={t.end}
-                className={({ isActive }) =>
-                  `flex-1 rounded-lg px-3 py-1.5 text-center text-sm font-semibold transition ${
-                    isActive ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500 hover:text-slate-700"
-                  }`
-                }
+                className={({ isActive }) => `tabs__link${isActive ? " is-active" : ""}`}
               >
                 {t.label}
               </NavLink>

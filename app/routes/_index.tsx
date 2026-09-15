@@ -19,15 +19,15 @@ import {
 } from "~/lib/constants";
 import { teamScore, MAX_TEAM_SCORE } from "~/lib/score";
 import { dDay, fmtKST, fmtKSTFull, kstYMD, sessionPhase, ymdLabel, type SessionPhase } from "~/lib/time";
+import { LiveCountdown } from "~/components/countdown";
 import {
   AttendanceBadge,
   Badge,
   Card,
   EmptyState,
   ErrorText,
+  PageHeader,
   SectionTitle,
-  inputClass,
-  btnPrimary,
 } from "~/components/ui";
 
 export async function loader({ request, context }: Route.LoaderArgs) {
@@ -192,182 +192,221 @@ export async function action({ request, context }: Route.ActionArgs) {
   return redirect("/");
 }
 
+/** 'M/D(요일)' 라벨만으로 다음 세션 D-day 계산 (연도는 오늘 기준 정합) */
+function ddayFromLabel(label: string): number | null {
+  const m = /^(\d{1,2})\/(\d{1,2})\((.)\)$/.exec(label);
+  if (!m) return null;
+  const year = Number(kstYMD().slice(0, 4));
+  for (const y of [year, year + 1]) {
+    const target = new Date(
+      `${y}-${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}T10:00:00+09:00`,
+    );
+    if (!Number.isNaN(target.getTime()) && target.getTime() >= Date.now()) {
+      return dDay(target);
+    }
+  }
+  return null;
+}
+
+/** 생일 4자리 인라인 폼 (출석/지각 공통) */
+function BirthForm({ sessionId, warn }: { sessionId: string; warn?: boolean }) {
+  return (
+    <Form method="post" className="cluster mt-3 fade-in">
+      <input type="hidden" name="sessionId" value={sessionId} />
+      <input
+        name="birth4"
+        className="input input--birth num"
+        placeholder="생일 4자리 (MMDD)"
+        inputMode="numeric"
+        maxLength={4}
+        required
+        autoFocus
+      />
+      <button type="submit" className={warn ? "btn btn--warn" : "btn btn--primary"}>
+        확인
+      </button>
+    </Form>
+  );
+}
+
 export default function IndexRoute({ loaderData }: Route.ComponentProps) {
   const actionData = useActionData<typeof action>();
   const [showForm, setShowForm] = useState(false);
   const a = loaderData.attendance;
+  const team = loaderData.team;
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-extrabold tracking-tight">
-          {loaderData.userName}님, 반가워요 👋
-        </h1>
-        <p className="mt-1 text-sm text-slate-500">{loaderData.todayLabel} 기준</p>
-      </div>
+    <div className="stack-xl">
+      <PageHeader
+        title={`${loaderData.userName}님, 반가워요 👋`}
+        sub={`${loaderData.todayLabel} 기준`}
+      />
 
-      {/* 오늘 출석 카드 */}
-      <Card>
-        <SectionTitle right={<Link to="/attendance" className="text-sm font-medium text-indigo-600">전체 기록 →</Link>}>
-          출석체크
-        </SectionTitle>
-
-        {!a && <EmptyState>등록된 수업 일정이 없어요. 관리자가 일정을 등록하면 여기에 표시돼요.</EmptyState>}
-
-        {a && a.my && (
-          <div className="flex items-center gap-3 rounded-xl bg-emerald-50 px-4 py-3">
-            <span className="text-2xl">✅</span>
+      {/* 출석 히어로 카드 */}
+      {!a ? (
+        <EmptyState>등록된 수업 일정이 없어요. 관리자가 일정을 등록하면 여기에 표시돼요.</EmptyState>
+      ) : (
+        <section className="hero">
+          <div className="cluster cluster--between">
             <div>
-              <div className="flex items-center gap-2 font-semibold text-slate-800">
-                {a.isToday ? "오늘" : a.dateLabel} <AttendanceBadge status={a.my.status} labels={ATTENDANCE_LABELS} />
+              <p className="hero__label">{a.isToday ? "TODAY · 오늘 수업" : "NEXT · 다음 수업"}</p>
+              <p className="hero__date num">{a.dateLabel}</p>
+            </div>
+            <Link to="/attendance" className="card__link">
+              전체 기록 →
+            </Link>
+          </div>
+
+          <div className="hero__body">
+            {a.my ? (
+              <div className="done-box">
+                <span className="done-box__icon" aria-hidden>
+                  ✅
+                </span>
+                <div>
+                  <div className="cluster">
+                    <strong>{a.isToday ? "오늘" : a.dateLabel}</strong>
+                    <AttendanceBadge status={a.my.status} labels={ATTENDANCE_LABELS} />
+                  </div>
+                  <p className="small faint num">
+                    체크 시각 {fmtKST(a.my.checkedAt, { hour: "numeric", minute: "2-digit" })}
+                  </p>
+                </div>
               </div>
-              <p className="text-xs text-slate-500">체크 시각 {fmtKST(a.my.checkedAt, { hour: "numeric", minute: "2-digit" })}</p>
-            </div>
-          </div>
-        )}
-
-        {a && !a.my && a.isToday && a.phase === "present" && (
-          <div>
-            <p className="text-sm text-slate-600">
-              지금 출석 체크 가능해요 (10:10까지 출석, 이후 11:00까지는 지각).
-            </p>
-            {!showForm ? (
-              <button type="button" className={`${btnPrimary} mt-3 text-base`} onClick={() => setShowForm(true)}>
-                ✋ 출석체크하기
-              </button>
+            ) : a.isToday && a.phase === "present" ? (
+              <div>
+                <LiveCountdown phase={a.phase} isToday={a.isToday} />
+                <p className="hero__hint">지금 출석 체크 가능해요 — 10:10까지 출석, 이후 11:00까지는 지각.</p>
+                {!showForm ? (
+                  <button type="button" className="btn btn--primary btn--lg mt-3" onClick={() => setShowForm(true)}>
+                    ✋ 출석체크하기
+                  </button>
+                ) : (
+                  <BirthForm sessionId={a.sessionId} />
+                )}
+              </div>
+            ) : a.isToday && a.phase === "late" ? (
+              <div>
+                <LiveCountdown phase={a.phase} isToday={a.isToday} />
+                <p className="notice notice--warning mt-3">
+                  ⏰ 출석 시간이 지나 <strong>지각</strong>으로 기록돼요. (11:00까지 체크 가능)
+                </p>
+                {!showForm ? (
+                  <button type="button" className="btn btn--warn mt-3" onClick={() => setShowForm(true)}>
+                    지각이라도 체크하기
+                  </button>
+                ) : (
+                  <BirthForm sessionId={a.sessionId} warn />
+                )}
+              </div>
+            ) : a.isToday && (a.phase === "scheduled" || a.phase === null) ? (
+              <div>
+                <LiveCountdown phase={a.phase} isToday={a.isToday} />
+                <p className="hero__hint">오전 10:00에 출석체크가 열려요 · 10:10까지 출석</p>
+              </div>
+            ) : a.isToday && a.phase === "closed" ? (
+              <p className="notice notice--danger">
+                오늘 출석체크가 마감됐어요. 문제가 있으면 관리자에게 문의해 주세요.
+              </p>
             ) : (
-              <Form method="post" className="mt-3 flex flex-wrap items-center gap-2">
-                <input type="hidden" name="sessionId" value={a.sessionId} />
-                <input
-                  name="birth4"
-                  className={`${inputClass} max-w-40`}
-                  placeholder="생일 4자리 (MMDD)"
-                  inputMode="numeric"
-                  maxLength={4}
-                  required
-                  autoFocus
-                />
-                <button type="submit" className={btnPrimary}>
-                  확인
-                </button>
-              </Form>
+              <div>
+                {(() => {
+                  const dd = ddayFromLabel(a.dateLabel);
+                  return dd != null ? (
+                    <div className="count">
+                      <span className="count__digits">D{dd === 0 ? "-day" : `-${dd}`}</span>
+                    </div>
+                  ) : null;
+                })()}
+                <p className="notice notice--neutral mt-2">
+                  다음 수업은 <strong>{a.dateLabel}</strong> — 오전 10:00에 출석체크가 열려요.
+                </p>
+              </div>
             )}
+
             <ErrorText>{actionData?.error}</ErrorText>
           </div>
-        )}
+        </section>
+      )}
 
-        {a && !a.my && a.isToday && a.phase === "late" && (
-          <div>
-            <div className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
-              ⏰ 출석 시간이 지나 <strong>지각</strong>으로 기록돼요. (11:00까지 체크 가능)
-            </div>
-            {!showForm ? (
-              <button type="button" className="mt-3 rounded-xl bg-amber-500 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-600" onClick={() => setShowForm(true)}>
-                지각이라도 체크하기
-              </button>
-            ) : (
-              <Form method="post" className="mt-3 flex flex-wrap items-center gap-2">
-                <input type="hidden" name="sessionId" value={a.sessionId} />
-                <input
-                  name="birth4"
-                  className={`${inputClass} max-w-40`}
-                  placeholder="생일 4자리 (MMDD)"
-                  inputMode="numeric"
-                  maxLength={4}
-                  required
-                  autoFocus
-                />
-                <button type="submit" className="rounded-xl bg-amber-500 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-600">
-                  확인
-                </button>
-              </Form>
-            )}
-            <ErrorText>{actionData?.error}</ErrorText>
-          </div>
-        )}
-
-        {a && !a.my && a.isToday && (a.phase === "scheduled" || a.phase === null) && (
-          <p className="rounded-xl bg-slate-100 px-4 py-3 text-sm text-slate-600">
-            오늘 수업! <strong>오전 10:00</strong>에 출석체크가 열려요.
-          </p>
-        )}
-
-        {a && !a.my && a.isToday && a.phase === "closed" && (
-          <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">
-            오늘 출석체크가 마감됐어요. 문제가 있으면 관리자에게 문의해 주세요.
-          </p>
-        )}
-
-        {a && !a.my && !a.isToday && (
-          <p className="rounded-xl bg-slate-100 px-4 py-3 text-sm text-slate-600">
-            다음 수업은 <strong>{a.dateLabel}</strong> — 오전 10:00에 출석체크가 열려요.
-          </p>
-        )}
-      </Card>
-
-      <div className="grid gap-6 md:grid-cols-2">
+      <div className="grid-2">
         {/* 내 팀 카드 */}
         <Card>
-          <SectionTitle right={<Link to="/team" className="text-sm font-medium text-indigo-600">관리 →</Link>}>
+          <SectionTitle
+            right={
+              <Link to="/team" className="card__link">
+                관리 →
+              </Link>
+            }
+          >
             내 팀
           </SectionTitle>
-          {!loaderData.team ? (
+          {!team ? (
             <EmptyState>
-              아직 팀이 없어요.{' '}
-              <Link to="/team" className="font-semibold text-indigo-600">
-                팀 만들기 / 초대코드로 합류
+              아직 팀이 없어요.{" "}
+              <Link to="/team" className="card__link">
+                팀 만들기 / 초대코드로 합류 →
               </Link>
             </EmptyState>
           ) : (
-            <div>
-              <div className="flex items-center justify-between">
-                <span className="text-lg font-bold">{loaderData.team.name}</span>
+            <div className="stack-md">
+              <div className="cluster cluster--between">
+                <strong style={{ fontSize: "var(--t-lg)", fontWeight: 800 }}>{team.name}</strong>
                 <Badge tone="indigo">
-                  {loaderData.team.score} / {MAX_TEAM_SCORE}점
+                  {team.score} / {MAX_TEAM_SCORE}점
                 </Badge>
               </div>
-              <div className="mt-3 h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
+              <div
+                className="progress"
+                role="progressbar"
+                aria-valuenow={team.score}
+                aria-valuemin={0}
+                aria-valuemax={MAX_TEAM_SCORE}
+                aria-label="팀 진행도"
+              >
                 <div
-                  className="h-full rounded-full bg-indigo-500 transition-all"
-                  style={{ width: `${(loaderData.team.score / MAX_TEAM_SCORE) * 100}%` }}
+                  className="progress__bar"
+                  style={{ width: `${(team.score / MAX_TEAM_SCORE) * 100}%` }}
                 />
               </div>
-              <ul className="mt-3 space-y-1 text-sm text-slate-600">
-                {loaderData.team.missing.length === 0 ? (
-                  <li className="font-medium text-emerald-600">🎉 모든 항목 완료!</li>
-                ) : (
-                  loaderData.team.missing.map((m) => (
-                    <li key={m} className="flex items-center gap-2">
-                      <span className="text-slate-400">•</span> {m}
-                    </li>
-                  ))
-                )}
-              </ul>
+              {team.missing.length === 0 ? (
+                <p className="notice notice--success">🎉 모든 항목 완료!</p>
+              ) : (
+                <ul className="stack-xs small muted" style={{ listStyle: "none", margin: 0, padding: 0 }}>
+                  {team.missing.map((m) => (
+                    <li key={m}>· {m}</li>
+                  ))}
+                </ul>
+              )}
             </div>
           )}
         </Card>
 
         {/* 진행 중 과제 */}
         <Card>
-          <SectionTitle right={<Link to="/assignments" className="text-sm font-medium text-indigo-600">전체 →</Link>}>
+          <SectionTitle
+            right={
+              <Link to="/assignments" className="card__link">
+                전체 →
+              </Link>
+            }
+          >
             진행 중 과제
           </SectionTitle>
           {loaderData.assignments.length === 0 ? (
             <EmptyState>진행 중인 과제가 없어요.</EmptyState>
           ) : (
-            <ul className="space-y-2">
+            <ul className="stack-sm" style={{ listStyle: "none", margin: 0, padding: 0 }}>
               {loaderData.assignments.map((as) => {
                 const dd = dDay(as.dueAt);
                 return (
                   <li key={as.id}>
-                    <Link
-                      to={`/assignments/${as.id}`}
-                      className="flex items-center justify-between rounded-xl border border-slate-200 px-3.5 py-2.5 transition hover:border-indigo-300 hover:bg-indigo-50/40"
-                    >
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-semibold text-slate-800">{as.title}</div>
-                        <div className="text-xs text-slate-500">
-                          {as.unit === "team" ? "팀 과제" : "개인 과제"} · 마감 {fmtKST(as.dueAt, { month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                    <Link to={`/assignments/${as.id}`} className="item-link">
+                      <div style={{ minWidth: 0 }}>
+                        <div className="item-link__title">{as.title}</div>
+                        <div className="item-link__meta num">
+                          {as.unit === "team" ? "팀 과제" : "개인 과제"} · 마감{" "}
+                          {fmtKST(as.dueAt, { month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" })}
                         </div>
                       </div>
                       {as.submitted ? (

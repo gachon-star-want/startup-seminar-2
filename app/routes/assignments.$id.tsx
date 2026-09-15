@@ -6,15 +6,13 @@ import { requireUser } from "~/lib/session";
 import { getCloudflare } from "~/lib/env";
 import { MAX_FILES_PER_SUBMISSION, MAX_FILE_MB } from "~/lib/constants";
 import { dDay, fmtKST } from "~/lib/time";
+import { IconArrowLeft } from "~/components/icons";
 import {
   Badge,
   Card,
   ErrorText,
+  Field,
   SectionTitle,
-  btnDanger,
-  btnPrimary,
-  inputClass,
-  labelClass,
   formatBytes,
 } from "~/components/ui";
 
@@ -211,13 +209,16 @@ export default function AssignmentDetailRoute({ loaderData }: Route.ComponentPro
   const dd = dDay(new Date(a.dueAt));
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
+    <div className="stack-lg">
       <div>
-        <Link to="/assignments" className="text-sm font-medium text-indigo-600">
-          ← 과제 목록
+        <Link to="/assignments" className="back-link">
+          <IconArrowLeft />
+          과제 목록
         </Link>
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <h1 className="text-2xl font-extrabold tracking-tight">{a.title}</h1>
+        <div className="cluster">
+          <h1 className="page-head__title" style={{ fontSize: "var(--t-xl)" }}>
+            {a.title}
+          </h1>
           <Badge tone={a.unit === "team" ? "indigo" : "gray"}>
             {a.unit === "team" ? "팀 과제" : "개인 과제"}
           </Badge>
@@ -227,12 +228,20 @@ export default function AssignmentDetailRoute({ loaderData }: Route.ComponentPro
             <Badge tone={dd <= 1 ? "red" : "amber"}>{dd === 0 ? "오늘 마감" : `D-${dd}`}</Badge>
           )}
         </div>
-        <p className="mt-1 text-sm text-slate-500">
-          마감 {fmtKST(new Date(a.dueAt), { year: "numeric", month: "numeric", day: "numeric", weekday: "short", hour: "numeric", minute: "2-digit" })}
+        <p className="page-head__sub num">
+          마감{" "}
+          {fmtKST(new Date(a.dueAt), {
+            year: "numeric",
+            month: "numeric",
+            day: "numeric",
+            weekday: "short",
+            hour: "numeric",
+            minute: "2-digit",
+          })}
           {a.unit === "team" && loaderData.myTeam ? ` · ${loaderData.myTeam.teamName} 팀으로 제출` : ""}
         </p>
         {a.description ? (
-          <p className="mt-3 whitespace-pre-wrap rounded-2xl border border-slate-200 bg-white p-4 text-sm leading-relaxed text-slate-700 shadow-sm">
+          <p className="card small muted" style={{ lineHeight: 1.75, whiteSpace: "pre-wrap", marginTop: "0.875rem" }}>
             {a.description}
           </p>
         ) : null}
@@ -242,9 +251,9 @@ export default function AssignmentDetailRoute({ loaderData }: Route.ComponentPro
 
       {a.unit === "team" && !loaderData.myTeam ? (
         <Card>
-          <p className="text-sm text-slate-600">
+          <p className="small muted">
             팀 과제예요.{" "}
-            <Link to="/team" className="font-semibold text-indigo-600">
+            <Link to="/team" className="card__link">
               내 팀 페이지
             </Link>
             에서 팀을 만들거나 합류한 뒤 제출해 주세요.
@@ -252,49 +261,44 @@ export default function AssignmentDetailRoute({ loaderData }: Route.ComponentPro
         </Card>
       ) : loaderData.closed && !loaderData.submission ? (
         <Card>
-          <p className="text-sm text-rose-600">마감 전에 제출된 기록이 없어요. 관리자에게 문의해 주세요.</p>
+          <p className="small" style={{ color: "var(--danger)", fontWeight: 600 }}>
+            마감 전에 제출된 기록이 없어요. 관리자에게 문의해 주세요.
+          </p>
         </Card>
       ) : (
         <>
           {/* 기존 제출 내용 */}
           {loaderData.submission ? (
             <Card>
-              <SectionTitle
-                right={<Badge tone="green">제출 완료</Badge>}
-              >
-                내 제출
-              </SectionTitle>
+              <SectionTitle right={<Badge tone="green">제출 완료</Badge>}>내 제출</SectionTitle>
               {loaderData.submission.content ? (
-                <p className="whitespace-pre-wrap rounded-xl bg-slate-50 p-3 text-sm text-slate-700">
+                <p
+                  className="notice notice--neutral"
+                  style={{ whiteSpace: "pre-wrap", fontWeight: 400 }}
+                >
                   {loaderData.submission.content}
                 </p>
               ) : null}
               {loaderData.submission.link ? (
-                <p className="mt-2 text-sm">
+                <p className="small mt-2">
                   🔗{" "}
-                  <a
-                    href={loaderData.submission.link}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="font-medium text-indigo-600 underline"
-                  >
+                  <a href={loaderData.submission.link} target="_blank" rel="noreferrer" className="card__link">
                     {loaderData.submission.link}
                   </a>
                 </p>
               ) : null}
               {loaderData.submission.files.length > 0 ? (
-                <ul className="mt-3 space-y-1.5">
+                <ul className="stack-sm mt-3" style={{ listStyle: "none", margin: "0.75rem 0 0", padding: 0 }}>
                   {loaderData.submission.files.map((f) => (
-                    <li key={f.id} className="flex items-center justify-between rounded-xl border border-slate-200 px-3 py-2 text-sm">
-                      <span className="truncate">
-                        📄 {f.filename}{" "}
-                        <span className="text-xs text-slate-400">({formatBytes(f.size)})</span>
+                    <li key={f.id} className="item-link">
+                      <span className="small" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        📄 {f.filename} <span className="faint">({formatBytes(f.size)})</span>
                       </span>
                       {!loaderData.closed ? (
                         <Form method="post" className="shrink-0">
                           <input type="hidden" name="intent" value="deleteFile" />
                           <input type="hidden" name="fileId" value={f.id} />
-                          <button type="submit" className={btnDanger}>
+                          <button type="submit" className="btn btn--danger btn--sm">
                             삭제
                           </button>
                         </Form>
@@ -303,8 +307,14 @@ export default function AssignmentDetailRoute({ loaderData }: Route.ComponentPro
                   ))}
                 </ul>
               ) : null}
-              <p className="mt-3 text-right text-[11px] text-slate-400">
-                마지막 수정 {fmtKST(new Date(loaderData.submission.updatedAt), { month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" })}
+              <p className="small faint right num" style={{ marginTop: "0.75rem" }}>
+                마지막 수정{" "}
+                {fmtKST(new Date(loaderData.submission.updatedAt), {
+                  month: "numeric",
+                  day: "numeric",
+                  hour: "numeric",
+                  minute: "2-digit",
+                })}
               </p>
             </Card>
           ) : null}
@@ -313,41 +323,35 @@ export default function AssignmentDetailRoute({ loaderData }: Route.ComponentPro
           {!loaderData.closed ? (
             <Card>
               <SectionTitle>{loaderData.submission ? "제출 수정" : "과제 제출"}</SectionTitle>
-              <Form method="post" encType="multipart/form-data" className="space-y-4">
+              <Form method="post" encType="multipart/form-data">
                 <input type="hidden" name="intent" value="submit" />
-                <div>
-                  <label className={labelClass} htmlFor="content">
-                    내용
-                  </label>
+                <Field label="내용" htmlFor="content">
                   <textarea
                     id="content"
                     name="content"
                     rows={4}
-                    className={inputClass}
+                    className="input"
                     placeholder="과제 내용을 간단히 적어주세요"
                     defaultValue={loaderData.submission?.content ?? ""}
                   />
-                </div>
-                <div>
-                  <label className={labelClass} htmlFor="link">
-                    링크 (노션/구글폼/유튜브 등)
-                  </label>
+                </Field>
+                <Field label="링크 (노션/구글폼/유튜브 등)" htmlFor="link">
                   <input
                     id="link"
                     name="link"
                     type="url"
-                    className={inputClass}
+                    className="input"
                     placeholder="https://..."
                     defaultValue={loaderData.submission?.link ?? ""}
                   />
-                </div>
-                <div>
-                  <label className={labelClass} htmlFor="files">
-                    파일 첨부 (최대 {MAX_FILES_PER_SUBMISSION}개 · 파일당 {MAX_FILE_MB}MB)
-                  </label>
-                  <input id="files" name="files" type="file" multiple className={inputClass} />
-                </div>
-                <button type="submit" className={`${btnPrimary} w-full`}>
+                </Field>
+                <Field
+                  label={`파일 첨부 (최대 ${MAX_FILES_PER_SUBMISSION}개 · 파일당 ${MAX_FILE_MB}MB)`}
+                  htmlFor="files"
+                >
+                  <input id="files" name="files" type="file" multiple className="input" />
+                </Field>
+                <button type="submit" className="btn btn--primary btn--block mt-4">
                   {loaderData.submission ? "수정하기" : "제출하기"}
                 </button>
               </Form>

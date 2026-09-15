@@ -4,76 +4,150 @@ export function cn(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(" ");
 }
 
-export function Card({ children, className }: { children: ReactNode; className?: string }) {
+/** 페이지 상단 타이틀 블록 */
+export function PageHeader({
+  title,
+  sub,
+  right,
+}: {
+  title: ReactNode;
+  sub?: ReactNode;
+  right?: ReactNode;
+}) {
   return (
-    <div className={cn("rounded-2xl border border-slate-200 bg-white p-5 shadow-sm", className)}>
-      {children}
+    <div className="page-head">
+      <div className="cluster cluster--between">
+        <h1 className="page-head__title">{title}</h1>
+        {right}
+      </div>
+      {sub ? <p className="page-head__sub">{sub}</p> : null}
     </div>
   );
 }
 
-export function SectionTitle({ children, right }: { children: ReactNode; right?: ReactNode }) {
+export function Card({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return <section className={cn("card", className)}>{children}</section>;
+}
+
+export function SectionTitle({
+  children,
+  right,
+}: {
+  children: ReactNode;
+  right?: ReactNode;
+}) {
   return (
-    <div className="mb-3 flex items-center justify-between gap-2">
-      <h2 className="text-lg font-bold text-slate-900">{children}</h2>
+    <div className="card__head">
+      <h2 className="card__title">{children}</h2>
       {right}
     </div>
   );
 }
 
-const toneClasses: Record<string, string> = {
-  gray: "bg-slate-100 text-slate-600",
-  green: "bg-emerald-100 text-emerald-700",
-  amber: "bg-amber-100 text-amber-700",
-  red: "bg-rose-100 text-rose-700",
-  indigo: "bg-indigo-100 text-indigo-700",
-};
-
-export function Badge({ tone = "gray", children }: { tone?: keyof typeof toneClasses; children: ReactNode }) {
+/** 통계 카드 */
+export function Stat({
+  value,
+  label,
+  tone,
+}: {
+  value: ReactNode;
+  label: ReactNode;
+  tone?: "success" | "warning" | "danger" | "primary";
+}) {
   return (
-    <span className={cn("inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold", toneClasses[tone])}>
-      {children}
-    </span>
+    <div className={cn("stat", tone && `stat--${tone}`)}>
+      <span className="stat__value num">{value}</span>
+      <span className="stat__label">{label}</span>
+    </div>
   );
 }
 
+const toneClasses: Record<string, string> = {
+  gray: "badge--gray",
+  green: "badge--green",
+  amber: "badge--amber",
+  red: "badge--red",
+  indigo: "badge--indigo",
+};
+
+export function Badge({
+  tone = "gray",
+  children,
+}: {
+  tone?: keyof typeof toneClasses;
+  children: ReactNode;
+}) {
+  return <span className={cn("badge", toneClasses[tone])}>{children}</span>;
+}
+
 /** 사업자등록/통신판매업신고 등 마일스톤 상태 배지 */
-export function MilestoneBadge({ status, labels }: { status: string; labels: Record<string, string> }) {
+export function MilestoneBadge({
+  status,
+  labels,
+}: {
+  status: string;
+  labels: Record<string, string>;
+}) {
   const tone = status === "done" ? "green" : status === "applied" ? "amber" : "gray";
   return <Badge tone={tone}>{labels[status] ?? status}</Badge>;
 }
 
 /** 출석 상태 배지 */
-export function AttendanceBadge({ status, labels }: { status: string; labels: Record<string, string> }) {
+export function AttendanceBadge({
+  status,
+  labels,
+}: {
+  status: string;
+  labels: Record<string, string>;
+}) {
   const tone = status === "present" ? "green" : status === "late" ? "amber" : "red";
   return <Badge tone={tone}>{labels[status] ?? status}</Badge>;
 }
 
 export function EmptyState({ children }: { children: ReactNode }) {
+  return <div className="empty">{children}</div>;
+}
+
+/** 폼 필드 래퍼: label + input + hint */
+export function Field({
+  label,
+  htmlFor,
+  hint,
+  children,
+}: {
+  label: ReactNode;
+  htmlFor?: string;
+  hint?: ReactNode;
+  children: ReactNode;
+}) {
   return (
-    <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60 p-8 text-center text-sm text-slate-500">
+    <div className="field">
+      <label className="label" htmlFor={htmlFor}>
+        {label}
+      </label>
       {children}
+      {hint ? <p className="hint">{hint}</p> : null}
     </div>
   );
 }
 
-export const inputClass =
-  "w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100";
+/* 기존 라우트와의 호환용 클래스 상수 */
+export const inputClass = "input";
+export const labelClass = "label";
 
-export const labelClass = "mb-1 block text-sm font-medium text-slate-700";
-
-export const btnPrimary =
-  "inline-flex items-center justify-center gap-1 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-50";
-
-export const btnGhost =
-  "inline-flex items-center justify-center gap-1 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-50";
-
-export const btnDanger =
-  "inline-flex items-center justify-center gap-1 rounded-xl border border-rose-200 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 transition hover:bg-rose-50";
+export const btnPrimary = "btn btn--primary";
+export const btnGhost = "btn btn--ghost";
+export const btnDanger = "btn btn--danger btn--sm";
 
 export function ErrorText({ children }: { children: ReactNode }) {
   if (!children) return null;
-  return <p className="mt-2 rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-600">{children}</p>;
+  return <p className="error-text">{children}</p>;
 }
 
 export function formatBytes(bytes: number): string {

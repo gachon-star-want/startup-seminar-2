@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { attendanceRecords, attendanceSessions, teamMembers, teams, users } from "~/db/schema";
 import { requireAdmin } from "~/lib/session";
 import { kstYMD } from "~/lib/time";
-import { Card, EmptyState, SectionTitle } from "~/components/ui";
+import { Card, EmptyState, SectionTitle, Stat } from "~/components/ui";
 
 export async function loader({ request, context }: Route.LoaderArgs) {
   const { db } = await requireAdmin(request, context);
@@ -61,67 +61,65 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 }
 
 export default function AdminIndexRoute({ loaderData }: Route.ComponentProps) {
-  const stats = [
-    { label: "학생", value: loaderData.userCount, emoji: "🧑‍🎓" },
-    { label: "팀", value: loaderData.teamCount, emoji: "🤝" },
-    { label: "수업 일정", value: loaderData.sessionCount, emoji: "📅" },
-  ];
-
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-3 gap-3">
-        {stats.map((s) => (
-          <Card key={s.label} className="text-center">
-            <div className="text-2xl">{s.emoji}</div>
-            <div className="mt-1 text-2xl font-extrabold text-slate-900">{s.value}</div>
-            <div className="text-xs font-medium text-slate-500">{s.label}</div>
-          </Card>
-        ))}
+    <div className="stack-xl">
+      <div className="stat-row stat-row--3">
+        <Stat value={loaderData.userCount} label="학생 🧑‍🎓" />
+        <Stat value={loaderData.teamCount} label="팀 🤝" />
+        <Stat value={loaderData.sessionCount} label="수업 일정 📅" />
       </div>
 
       {loaderData.todaySummary ? (
         <Card>
-          <SectionTitle right={<Link to="/admin/attendance" className="text-sm font-medium text-indigo-600">출석 관리 →</Link>}>
+          <SectionTitle
+            right={
+              <Link to="/admin/attendance" className="card__link">
+                출석 관리 →
+              </Link>
+            }
+          >
             오늘 출석 현황
           </SectionTitle>
-          <div className="flex gap-2">
-            <span className="rounded-full bg-emerald-100 px-4 py-1.5 text-sm font-bold text-emerald-700">
-              출석 {loaderData.todaySummary.present}
-            </span>
-            <span className="rounded-full bg-amber-100 px-4 py-1.5 text-sm font-bold text-amber-700">
-              지각 {loaderData.todaySummary.late}
-            </span>
-            <span className="rounded-full bg-rose-100 px-4 py-1.5 text-sm font-bold text-rose-700">
-              결석 {loaderData.todaySummary.absent}
-            </span>
+          <div className="stat-row">
+            <Stat value={loaderData.todaySummary.present} label="출석" tone="success" />
+            <Stat value={loaderData.todaySummary.late} label="지각" tone="warning" />
+            <Stat value={loaderData.todaySummary.absent} label="결석" tone="danger" />
           </div>
         </Card>
       ) : (
         <EmptyState>오늘은 수업 일정이 없어요.</EmptyState>
       )}
 
-      <Card className="overflow-x-auto p-0">
-        <div className="border-b border-slate-200 px-4 py-3">
-          <h2 className="font-bold text-slate-900">학생 명단 ({loaderData.users.length}명)</h2>
+      <Card className="card--flush">
+        <div className="card__head" style={{ padding: "0.875rem 1rem 0", margin: 0 }}>
+          <h2 className="card__title">학생 명단 ({loaderData.users.length}명)</h2>
         </div>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-slate-200 text-left text-xs text-slate-500">
-              <th className="px-4 py-2.5">이름</th>
-              <th className="px-4 py-2.5">학번</th>
-              <th className="px-4 py-2.5">팀</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loaderData.users.map((u) => (
-              <tr key={u.id} className="border-b border-slate-100 last:border-0">
-                <td className="px-4 py-2.5 font-medium text-slate-800">{u.name}</td>
-                <td className="px-4 py-2.5 text-slate-500">{u.studentNumber}</td>
-                <td className="px-4 py-2.5 text-slate-600">{u.teamName ?? <span className="text-slate-400">없음</span>}</td>
+        <div className="table-wrap">
+          <table className="table table--stack">
+            <thead>
+              <tr>
+                <th>이름</th>
+                <th>학번</th>
+                <th>팀</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {loaderData.users.map((u) => (
+                <tr key={u.id}>
+                  <td data-label="이름" style={{ fontWeight: 700 }}>
+                    {u.name}
+                  </td>
+                  <td data-label="학번" className="muted num">
+                    {u.studentNumber}
+                  </td>
+                  <td data-label="팀" className="muted">
+                    {u.teamName ?? <span className="faint">없음</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </Card>
     </div>
   );

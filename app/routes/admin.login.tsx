@@ -8,7 +8,7 @@ import {
   cookieHeader,
   makeAdminToken,
 } from "~/lib/auth";
-import { Card, ErrorText, btnPrimary, inputClass } from "~/components/ui";
+import { Card, ErrorText } from "~/components/ui";
 
 const ADMIN_COOKIE_TTL = 60 * 60 * 12; // 12시간
 
@@ -48,22 +48,31 @@ export default function AdminLoginRoute() {
   const actionData = useActionData<typeof action>();
 
   return (
-    <div className="mx-auto max-w-sm py-12">
+    <div className="auth-wrap">
       <Card>
-        <h1 className="text-xl font-bold">🔐 관리자</h1>
-        <p className="mt-1 text-sm text-slate-500">관리자 비밀번호를 입력해 주세요.</p>
-        <Form method="post" className="mt-4 space-y-3">
+        <div className="auth-mark" aria-hidden>
+          🔐
+        </div>
+        <div style={{ textAlign: "center", marginTop: "1rem" }}>
+          <h1 className="page-head__title" style={{ fontSize: "var(--t-xl)" }}>
+            관리자
+          </h1>
+          <p className="muted small" style={{ marginTop: "0.375rem" }}>
+            관리자 비밀번호를 입력해 주세요.
+          </p>
+        </div>
+        <Form method="post" className="mt-4">
           <input type="hidden" name="intent" value="login" />
           <input
             name="password"
             type="password"
-            className={inputClass}
+            className="input"
             placeholder="비밀번호"
             autoFocus
             required
           />
           <ErrorText>{actionData?.error}</ErrorText>
-          <button type="submit" className={`${btnPrimary} w-full`}>
+          <button type="submit" className="btn btn--primary btn--block mt-4">
             입장
           </button>
         </Form>

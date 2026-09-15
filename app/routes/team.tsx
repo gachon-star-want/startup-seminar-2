@@ -7,16 +7,14 @@ import { requireUser } from "~/lib/session";
 import { randomInviteCode } from "~/lib/auth";
 import { BUSINESS_STATUS_LABELS, MAIL_ORDER_STATUS_LABELS, SALES_CHANNEL_OPTIONS } from "~/lib/constants";
 import { teamScore, MAX_TEAM_SCORE } from "~/lib/score";
+import { IconCopy } from "~/components/icons";
 import {
   Badge,
   Card,
   ErrorText,
+  Field,
+  PageHeader,
   SectionTitle,
-  btnDanger,
-  btnGhost,
-  btnPrimary,
-  inputClass,
-  labelClass,
 } from "~/components/ui";
 
 export async function loader({ request, context }: Route.LoaderArgs) {
@@ -167,28 +165,45 @@ function StatusPicker({
   current: string;
 }) {
   return (
-    <div>
-      <span className={labelClass}>{label}</span>
-      <div className="flex flex-wrap gap-2">
+    <div className="field">
+      <span className="label">{label}</span>
+      <div className="seg" role="radiogroup" aria-label={label}>
         {(["none", "applied", "done"] as const).map((v) => (
-          <label
-            key={v}
-            className={`cursor-pointer rounded-xl border px-3.5 py-1.5 text-sm font-medium transition has-[:checked]:border-indigo-500 has-[:checked]:bg-indigo-50 has-[:checked]:text-indigo-700 ${
-              v === current ? "" : ""
-            }`}
-          >
-            <input
-              type="radio"
-              name={name}
-              value={v}
-              defaultChecked={current === v}
-              className="sr-only"
-            />
-            {labels[v]}
+          <label key={v} className="seg__item">
+            <input type="radio" name={name} value={v} defaultChecked={current === v} />
+            <span>{labels[v]}</span>
           </label>
         ))}
       </div>
     </div>
+  );
+}
+
+function CopyButton({ code }: { code: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      className={copied ? "copy-btn is-copied" : "copy-btn"}
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(code);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        } catch {
+          // 클립보드 실패 시 무시
+        }
+      }}
+    >
+      {copied ? (
+        "복사됨!"
+      ) : (
+        <>
+          <IconCopy />
+          복사
+        </>
+      )}
+    </button>
   );
 }
 
@@ -198,36 +213,37 @@ export default function TeamRoute({ loaderData }: Route.ComponentProps) {
 
   if (!team) {
     return (
-      <div className="mx-auto max-w-2xl space-y-6">
-        <h1 className="text-2xl font-extrabold tracking-tight">내 팀</h1>
+      <div className="stack-xl">
+        <PageHeader title="내 팀" sub="팀을 만들거나 초대코드로 합류할 수 있어요" />
         <ErrorText>{actionData?.error}</ErrorText>
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid-2">
           <Card>
             <SectionTitle>팀 만들기</SectionTitle>
-            <p className="mb-3 text-sm text-slate-500">
-              새 팀을 만들면 <strong>초대코드</strong>가 발급돼요. 팀원에게 코드를 공유하면 돼요. 혼자 하는 팀도 OK!
+            <p className="small muted">
+              새 팀을 만들면 <strong>초대코드</strong>가 발급돼요. 팀원에게 코드를 공유하면 돼요.
+              혼자 하는 팀도 OK!
             </p>
-            <Form method="post" className="space-y-3">
+            <Form method="post" className="mt-3">
               <input type="hidden" name="intent" value="create" />
-              <input name="name" className={inputClass} placeholder="팀명 (예: 폴리곤)" required />
-              <button type="submit" className={`${btnPrimary} w-full`}>
+              <input name="name" className="input" placeholder="팀명 (예: 폴리곤)" required />
+              <button type="submit" className="btn btn--primary btn--block mt-3">
                 팀 만들기
               </button>
             </Form>
           </Card>
           <Card>
             <SectionTitle>초대코드로 합류</SectionTitle>
-            <p className="mb-3 text-sm text-slate-500">팀장이 공유한 6자리 코드를 입력하세요.</p>
-            <Form method="post" className="space-y-3">
+            <p className="small muted">팀장이 공유한 6자리 코드를 입력하세요.</p>
+            <Form method="post" className="mt-3">
               <input type="hidden" name="intent" value="join" />
               <input
                 name="code"
-                className={`${inputClass} text-center text-lg font-bold tracking-[0.3em] uppercase`}
+                className="input input--code num"
                 placeholder="ABC123"
                 maxLength={8}
                 required
               />
-              <button type="submit" className={`${btnGhost} w-full`}>
+              <button type="submit" className="btn btn--ghost btn--block mt-3">
                 합류하기
               </button>
             </Form>
@@ -238,11 +254,15 @@ export default function TeamRoute({ loaderData }: Route.ComponentProps) {
   }
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-extrabold tracking-tight">내 팀</h1>
-        <Badge tone="indigo">{team.score} / {MAX_TEAM_SCORE}점</Badge>
-      </div>
+    <div className="stack-xl">
+      <PageHeader
+        title="내 팀"
+        right={
+          <Badge tone="indigo">
+            {team.score} / {MAX_TEAM_SCORE}점
+          </Badge>
+        }
+      />
       <ErrorText>{actionData?.error}</ErrorText>
 
       {/* 팀 정보 + 멤버 */}
@@ -251,7 +271,7 @@ export default function TeamRoute({ loaderData }: Route.ComponentProps) {
           right={
             <Form method="post">
               <input type="hidden" name="intent" value="leave" />
-              <button type="submit" className={btnDanger}>
+              <button type="submit" className="btn btn--danger btn--sm">
                 팀 나가기
               </button>
             </Form>
@@ -260,19 +280,19 @@ export default function TeamRoute({ loaderData }: Route.ComponentProps) {
           {team.name}
         </SectionTitle>
 
-        <div className="rounded-xl bg-indigo-50 px-4 py-3">
-          <p className="text-xs font-medium text-indigo-500">초대코드 (팀원에게 공유하세요)</p>
-          <div className="mt-1 flex items-center gap-3">
-            <span className="text-2xl font-extrabold tracking-[0.25em] text-indigo-700">{team.inviteCode}</span>
-            <CopyButton code={team.inviteCode} />
+        <div className="code-box">
+          <div>
+            <p className="code-box__label">초대코드 · 팀원에게 공유하세요</p>
+            <span className="code-box__code num">{team.inviteCode}</span>
           </div>
+          <CopyButton code={team.inviteCode} />
         </div>
 
-        <ul className="mt-4 space-y-1.5 text-sm">
+        <ul className="member-list mt-4">
           {team.members.map((m) => (
-            <li key={m.userId} className="flex items-center gap-2">
-              <span className="font-medium text-slate-800">{m.name}</span>
-              <span className="text-xs text-slate-400">{m.studentNumber}</span>
+            <li key={m.userId}>
+              <span className="member-list__name">{m.name}</span>
+              <span className="member-list__id num">{m.studentNumber}</span>
               {m.role === "leader" && <Badge tone="indigo">팀장</Badge>}
               {m.userId === team.myUserId && <Badge tone="gray">나</Badge>}
             </li>
@@ -283,34 +303,27 @@ export default function TeamRoute({ loaderData }: Route.ComponentProps) {
       {/* 팀 정보 수정 (팀원 누구나) */}
       <Card>
         <SectionTitle>팀 정보 업데이트</SectionTitle>
-        <p className="mb-4 text-xs text-slate-500">
-          리더보드에 반영돼요! 팀원 누구나 업데이트할 수 있어요.
-        </p>
-        <Form method="post" className="space-y-5">
+        <p className="small muted">리더보드에 반영돼요! 팀원 누구나 업데이트할 수 있어요.</p>
+        <Form method="post" className="mt-4">
           <input type="hidden" name="intent" value="update" />
 
-          <div>
-            <label className={labelClass} htmlFor="t-name">팀명</label>
-            <input id="t-name" name="name" className={inputClass} defaultValue={team.name} required />
-          </div>
-
-          <div>
-            <label className={labelClass} htmlFor="t-item">아이템 (무엇을 판매하나요?)</label>
+          <Field label="팀명" htmlFor="t-name">
+            <input id="t-name" name="name" className="input" defaultValue={team.name} required />
+          </Field>
+          <Field label="아이템 (무엇을 판매하나요?)" htmlFor="t-item">
             <input
               id="t-item"
               name="itemName"
-              className={inputClass}
+              className="input"
               placeholder="예: 반려견용 스마트 목줄"
               defaultValue={team.itemName ?? ""}
             />
-          </div>
-
-          <div>
-            <label className={labelClass} htmlFor="t-channel">판매 채널 (어디서 판매하나요?)</label>
+          </Field>
+          <Field label="판매 채널 (어디서 판매하나요?)" htmlFor="t-channel">
             <input
               id="t-channel"
               name="salesChannel"
-              className={inputClass}
+              className="input"
               placeholder="자유롭게 입력하거나 추천에서 선택"
               list="channel-options"
               defaultValue={team.salesChannel ?? ""}
@@ -320,7 +333,7 @@ export default function TeamRoute({ loaderData }: Route.ComponentProps) {
                 <option key={c} value={c} />
               ))}
             </datalist>
-          </div>
+          </Field>
 
           <StatusPicker
             name="businessStatus"
@@ -335,44 +348,22 @@ export default function TeamRoute({ loaderData }: Route.ComponentProps) {
             current={team.mailOrderStatus}
           />
 
-          <div>
-            <label className={labelClass} htmlFor="t-memo">비고 (자유롭게 기록)</label>
+          <Field label="비고 (자유롭게 기록)" htmlFor="t-memo">
             <textarea
               id="t-memo"
               name="memo"
               rows={3}
-              className={inputClass}
+              className="input"
               placeholder="예: 9월 말 쿠팡 입점 예정, CS 채널 준비 중 등"
               defaultValue={team.memo ?? ""}
             />
-          </div>
+          </Field>
 
-          <button type="submit" className={`${btnPrimary} w-full`}>
+          <button type="submit" className="btn btn--primary btn--block mt-4">
             저장하기
           </button>
         </Form>
       </Card>
     </div>
-  );
-}
-
-function CopyButton({ code }: { code: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <button
-      type="button"
-      className="rounded-lg border border-indigo-200 bg-white px-2.5 py-1 text-xs font-semibold text-indigo-600 hover:bg-indigo-50"
-      onClick={async () => {
-        try {
-          await navigator.clipboard.writeText(code);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
-        } catch {
-          // 클립보드 실패 시 무시
-        }
-      }}
-    >
-      {copied ? "복사됨!" : "복사"}
-    </button>
   );
 }

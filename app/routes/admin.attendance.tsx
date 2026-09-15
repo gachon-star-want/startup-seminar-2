@@ -1,10 +1,11 @@
+import { useEffect, useState } from "react";
 import type { Route } from "./+types/admin.attendance";
-import { useActionData } from "react-router";
+import { Form, useActionData, useNavigation } from "react-router";
 import { asc, and, eq } from "drizzle-orm";
 import { attendanceRecords, attendanceSessions, users } from "~/db/schema";
 import { requireAdmin } from "~/lib/session";
 import { kstInstant, SESSION_WINDOWS, sessionPhase, ymdLabel } from "~/lib/time";
-import { Card, ErrorText, SectionTitle, btnPrimary, inputClass } from "~/components/ui";
+import { Card, ErrorText, SectionTitle } from "~/components/ui";
 
 export async function loader({ request, context }: Route.LoaderArgs) {
   const { db } = await requireAdmin(request, context);
@@ -85,68 +86,64 @@ export async function action({ request, context }: Route.ActionArgs) {
   return { error: "알 수 없는 요청이에요." };
 }
 
-const cellStyle: Record<string, string> = {
-  present: "bg-emerald-100 text-emerald-700 hover:bg-emerald-200",
-  late: "bg-amber-100 text-amber-700 hover:bg-amber-200",
-  absent: "bg-rose-100 text-rose-700 hover:bg-rose-200",
-  none: "bg-slate-100 text-slate-400 hover:bg-slate-200",
-};
 const cellLabel: Record<string, string> = { present: "출", late: "지", absent: "결", none: "·" };
 const nextOf: Record<string, string> = { none: "present", present: "late", late: "absent", absent: "none" };
 
 export default function AdminAttendanceRoute({ loaderData }: Route.ComponentProps) {
   const actionData = useActionData<typeof action>();
+  const navigation = useNavigation();
+  const [pendingKey, setPendingKey] = useState<string | null>(null);
+
+  // 제출 완료(Idle 복귀)하면 셀 pending 해제
+  useEffect(() => {
+    if (navigation.state === "idle") setPendingKey(null);
+  }, [navigation.state]);
+
   return (
-    <div className="space-y-6">
+    <div className="stack-xl">
       <Card>
         <SectionTitle>수업 날짜 추가</SectionTitle>
-        <p className="mb-3 text-xs text-slate-500">
+        <p className="small muted">
           추가한 날짜에 자동으로 오전 10:00~10:10 출석 / 10:10~11:00 지각 창이 열려요 (한국 시간 기준).
         </p>
-        <form method="post" className="flex flex-wrap items-end gap-2">
+        <Form method="post" className="cluster mt-3">
           <input type="hidden" name="intent" value="addSession" />
-          <div>
-            <input type="date" name="date" className={inputClass} required />
-          </div>
-          <div className="min-w-40 flex-1">
-            <input name="note" className={inputClass} placeholder="비고 (선택, 예: 중간발표)" />
-          </div>
-          <button type="submit" className={btnPrimary}>
+          <input type="date" name="date" className="input num" style={{ flex: "0 0 auto" }} required />
+          <input name="note" className="input" placeholder="비고 (선택, 예: 중간발표)" style={{ flex: "1 1 10rem" }} />
+          <button type="submit" className="btn btn--primary">
             추가
           </button>
-        </form>
+        </Form>
         <ErrorText>{actionData?.error}</ErrorText>
       </Card>
 
-      <Card className="p-0">
-        <div className="flex items-center justify-between px-4 py-3">
-          <h2 className="font-bold text-slate-900">출석 현황 그리드</h2>
-          <p className="text-xs text-slate-400">셀을 누르면 없음 → 출석 → 지각 → 결석 → 없음 순서로 순환</p>
+      <Card className="card--flush">
+        <div className="card__head" style={{ padding: "0.875rem 1rem 0", margin: 0 }}>
+          <h2 className="card__title">출석 현황 그리드</h2>
+          <p className="small faint">셀을 누르면 없음 → 출석 → 지각 → 결석 → 없음 순서로 순환</p>
         </div>
         {loaderData.users.length === 0 || loaderData.sessions.length === 0 ? (
-          <p className="px-4 pb-4 text-sm text-slate-500">학생 또는 수업 날짜가 아직 없어요.</p>
+          <p className="small muted" style={{ padding: "1rem 1rem 1.25rem" }}>
+            학생 또는 수업 날짜가 아직 없어요.
+          </p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full border-separate border-spacing-0 text-sm">
+          <div className="table-wrap">
+            <table className="table att-grid">
               <thead>
                 <tr>
-                  <th className="sticky left-0 z-[1] border-b border-slate-200 bg-white px-3 py-2 text-left text-xs font-semibold text-slate-500">
-                    이름
-                  </th>
+                  <th>이름</th>
                   {loaderData.sessions.map((s) => (
-                    <th key={s.id} className="border-b border-slate-200 px-1.5 py-2 text-center text-xs font-semibold text-slate-500">
-                      <div className="whitespace-nowrap">{s.label}</div>
-                      <form method="post" className="mt-0.5">
+                    <th key={s.id} style={{ textAlign: "center" }}>
+                      <div className="num" style={{ whiteSpace: "nowrap" }}>
+                        {s.label}
+                      </div>
+                      <Form method="post" style={{ marginTop: "0.125rem" }}>
                         <input type="hidden" name="intent" value="deleteSession" />
                         <input type="hidden" name="sessionId" value={s.id} />
-                        <button
-                          type="submit"
-                          className="text-[10px] font-normal text-slate-300 hover:text-rose-500"
-                          title="이 날짜 삭제"
-                        >
+                        <button type="submit" className="del-x" title="이 날짜 삭제">
                           ✕
                         </button>
-                      </form>
+                      </Form>
                     </th>
                   ))}
                 </tr>
@@ -154,15 +151,17 @@ export default function AdminAttendanceRoute({ loaderData }: Route.ComponentProp
               <tbody>
                 {loaderData.users.map((u) => (
                   <tr key={u.id}>
-                    <td className="sticky left-0 z-[1] whitespace-nowrap border-b border-slate-100 bg-white px-3 py-1.5 font-medium text-slate-800">
-                      {u.name}
-                    </td>
+                    <td style={{ fontWeight: 700, whiteSpace: "nowrap" }}>{u.name}</td>
                     {loaderData.sessions.map((s) => {
                       const status = loaderData.recordMap[`${s.id}:${u.id}`] ?? "none";
                       const isFuture = s.phase === "scheduled";
+                      const key = `${s.id}:${u.id}`;
                       return (
-                        <td key={s.id} className="border-b border-slate-100 px-1 py-1 text-center">
-                          <form method="post">
+                        <td key={s.id} style={{ textAlign: "center" }}>
+                          <Form
+                            method="post"
+                            onSubmit={() => setPendingKey(key)}
+                          >
                             <input type="hidden" name="intent" value="setCell" />
                             <input type="hidden" name="sessionId" value={s.id} />
                             <input type="hidden" name="userId" value={u.id} />
@@ -170,12 +169,13 @@ export default function AdminAttendanceRoute({ loaderData }: Route.ComponentProp
                             <button
                               type="submit"
                               disabled={isFuture}
+                              data-status={status}
+                              className={`cell-btn${pendingKey === key ? " is-pending" : ""}`}
                               title={isFuture ? "예정된 수업" : `${u.name} · ${s.label} → ${cellLabel[nextOf[status]]}`}
-                              className={`h-8 w-9 rounded-lg text-xs font-bold transition disabled:opacity-40 ${cellStyle[status]}`}
                             >
                               {cellLabel[status]}
                             </button>
-                          </form>
+                          </Form>
                         </td>
                       );
                     })}

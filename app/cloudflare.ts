@@ -4,10 +4,10 @@ declare global {
   interface CloudflareEnvironment extends Env {
     /** Neon Postgres 연결 문자열 (wrangler secret) */
     DATABASE_URL: string;
-    /** 세션 서명용 시크릿 (로컬 미설정 시 기본값 사용) */
-    SESSION_SECRET?: string;
+    /** 세션 서명용 시크릿 (로컬 미설정 시 기본값 사용) — wrangler types가 .dev.vars를 읽으면 필수 타입이 됨 */
+    SESSION_SECRET: string;
     /** 관리자 페이지 비밀번호 (기본값: 0806) */
-    ADMIN_PASSWORD?: string;
+    ADMIN_PASSWORD: string;
   }
 }
 
