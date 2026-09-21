@@ -1,44 +1,14 @@
 import type { Route } from "./+types/board";
-import { eq } from "drizzle-orm";
-import { teamMembers, teams, users } from "~/db/schema";
-import { requireUser } from "~/lib/session";
+import { TeamRoster } from "~/modules/teams/index.server";
+import { requireAppContext } from "~/lib/context.server";
 import { BUSINESS_STATUS_LABELS, MAIL_ORDER_STATUS_LABELS } from "~/lib/constants";
 import { fmtKST } from "~/lib/time";
 import { EmptyState, MilestoneBadge, PageHeader } from "~/components/ui";
 
 export async function loader({ request, context }: Route.LoaderArgs) {
-  const { db } = await requireUser(request, context);
-
-  const [allTeams, memberships] = await Promise.all([
-    db.select().from(teams),
-    db
-      .select({ teamId: teamMembers.teamId, userName: users.name })
-      .from(teamMembers)
-      .innerJoin(users, eq(teamMembers.userId, users.id)),
-  ]);
-
-  const membersByTeam = new Map<string, string[]>();
-  for (const m of memberships) {
-    const list = membersByTeam.get(m.teamId) ?? [];
-    list.push(m.userName);
-    membersByTeam.set(m.teamId, list);
-  }
-
-  const teamsWithMembers = allTeams
-    .map((t) => ({
-      id: t.id,
-      name: t.name,
-      itemName: t.itemName,
-      salesChannel: t.salesChannel,
-      businessStatus: t.businessStatus,
-      mailOrderStatus: t.mailOrderStatus,
-      memo: t.memo,
-      updatedAt: t.updatedAt,
-      members: membersByTeam.get(t.id) ?? [],
-    }))
-    .sort((a, b) => a.name.localeCompare(b.name, "ko"));
-
-  return { teams: teamsWithMembers };
+  const ctx = await requireAppContext(request, context);
+  const teams = await TeamRoster.getLeaderboard(ctx);
+  return { teams };
 }
 
 export default function BoardRoute({ loaderData }: Route.ComponentProps) {

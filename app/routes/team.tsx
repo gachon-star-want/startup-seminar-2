@@ -1,10 +1,8 @@
 import { useState } from "react";
 import { data, Form, redirect, useActionData } from "react-router";
 import type { Route } from "./+types/team";
-import { asc, eq } from "drizzle-orm";
-import { teamMembers, teams, users } from "~/db/schema";
-import { requireUser } from "~/lib/session";
-import { randomInviteCode } from "~/lib/auth";
+import { TeamRoster } from "~/modules/teams/index.server";
+import { requireAppContext } from "~/lib/context.server";
 import { BUSINESS_STATUS_LABELS, MAIL_ORDER_STATUS_LABELS, SALES_CHANNEL_OPTIONS } from "~/lib/constants";
 import { IconCopy } from "~/components/icons";
 import {
@@ -17,134 +15,53 @@ import {
 } from "~/components/ui";
 
 export async function loader({ request, context }: Route.LoaderArgs) {
-  const { user, db } = await requireUser(request, context);
-
-  const [membership] = await db
-    .select({ team: teams, role: teamMembers.role })
-    .from(teamMembers)
-    .innerJoin(teams, eq(teamMembers.teamId, teams.id))
-    .where(eq(teamMembers.userId, user.id))
-    .limit(1);
-
-  if (!membership) return { team: null };
-
-  const members = await db
-    .select({ userId: users.id, name: users.name, role: teamMembers.role })
-    .from(teamMembers)
-    .innerJoin(users, eq(teamMembers.userId, users.id))
-    .where(eq(teamMembers.teamId, membership.team.id))
-    .orderBy(asc(teamMembers.createdAt));
-
-  return {
-    team: {
-      id: membership.team.id,
-      name: membership.team.name,
-      inviteCode: membership.team.inviteCode,
-      itemName: membership.team.itemName,
-      salesChannel: membership.team.salesChannel,
-      businessStatus: membership.team.businessStatus,
-      mailOrderStatus: membership.team.mailOrderStatus,
-      memo: membership.team.memo,
-      myRole: membership.role,
-      myUserId: user.id,
-      members,
-    },
-  };
+  const ctx = await requireAppContext(request, context);
+  const team = await TeamRoster.getMyTeam(ctx);
+  return { team };
 }
 
 export async function action({ request, context }: Route.ActionArgs) {
-  const { user, db } = await requireUser(request, context);
+  const ctx = await requireAppContext(request, context);
   const form = await request.formData();
   const intent = String(form.get("intent") ?? "");
 
-  const [current] = await db
-    .select({ teamId: teamMembers.teamId, role: teamMembers.role })
-    .from(teamMembers)
-    .where(eq(teamMembers.userId, user.id))
-    .limit(1);
-
   if (intent === "create") {
-    const name = String(form.get("name") ?? "").trim();
-    if (name.length < 2) return data({ error: "팀명을 2자 이상 입력해 주세요." }, { status: 400 });
-    if (current) return data({ error: "이미 팀이 있어요. 먼저 탈퇴한 뒤 만들 수 있어요." }, { status: 400 });
-
-    // 초대코드 중복 방지
-    let code = randomInviteCode();
-    for (let i = 0; i < 5; i++) {
-      const [dup] = await db.select({ id: teams.id }).from(teams).where(eq(teams.inviteCode, code)).limit(1);
-      if (!dup) break;
-      code = randomInviteCode();
-    }
-
-    const [team] = await db.insert(teams).values({ name, inviteCode: code }).returning();
-    await db.insert(teamMembers).values({ teamId: team.id, userId: user.id, role: "leader" });
+    const name = String(form.get("name") ?? "");
+    const res = await TeamRoster.create(ctx, name);
+    if (!res.ok) return data({ error: res.message }, { status: 400 });
     return redirect("/team");
   }
 
   if (intent === "join") {
-    const code = String(form.get("code") ?? "").trim().toUpperCase();
-    if (!code) return data({ error: "초대코드를 입력해 주세요." }, { status: 400 });
-    if (current) return data({ error: "이미 팀이 있어요. 먼저 탈퇴한 뒤 참여할 수 있어요." }, { status: 400 });
-
-    const [team] = await db.select().from(teams).where(eq(teams.inviteCode, code)).limit(1);
-    if (!team) return data({ error: "초대코드를 찾을 수 없어요. 팀장에게 코드를 확인해 주세요." }, { status: 400 });
-
-    const inserted = await db
-      .insert(teamMembers)
-      .values({ teamId: team.id, userId: user.id, role: "member" })
-      .onConflictDoNothing()
-      .returning();
-    if (inserted.length === 0) return data({ error: "이미 이 팀에 속해 있어요." }, { status: 400 });
+    const code = String(form.get("code") ?? "");
+    const res = await TeamRoster.joinByCode(ctx, code);
+    if (!res.ok) return data({ error: res.message }, { status: 400 });
     return redirect("/team");
   }
 
   if (intent === "update") {
-    if (!current) return data({ error: "팀이 없어요." }, { status: 400 });
-    const name = String(form.get("name") ?? "").trim();
-    const itemName = String(form.get("itemName") ?? "").trim();
-    const salesChannel = String(form.get("salesChannel") ?? "").trim();
+    const name = String(form.get("name") ?? "");
+    const itemName = String(form.get("itemName") ?? "");
+    const salesChannel = String(form.get("salesChannel") ?? "");
     const businessStatus = String(form.get("businessStatus") ?? "none");
     const mailOrderStatus = String(form.get("mailOrderStatus") ?? "none");
-    const memo = String(form.get("memo") ?? "").trim();
+    const memo = String(form.get("memo") ?? "");
 
-    if (name.length < 2) return data({ error: "팀명을 2자 이상 입력해 주세요." }, { status: 400 });
-    if (!["none", "applied", "done"].includes(businessStatus) || !["none", "applied", "done"].includes(mailOrderStatus)) {
-      return data({ error: "상태 값이 올바르지 않아요." }, { status: 400 });
-    }
-
-    await db
-      .update(teams)
-      .set({
-        name,
-        itemName: itemName || null,
-        salesChannel: salesChannel || null,
-        businessStatus,
-        mailOrderStatus,
-        memo: memo || null,
-        updatedAt: new Date(),
-      })
-      .where(eq(teams.id, current.teamId));
+    const res = await TeamRoster.updateProfile(ctx, {
+      name,
+      itemName,
+      salesChannel,
+      businessStatus,
+      mailOrderStatus,
+      memo,
+    });
+    if (!res.ok) return data({ error: res.message }, { status: 400 });
     return redirect("/team");
   }
 
   if (intent === "leave") {
-    if (!current) return data({ error: "팀이 없어요." }, { status: 400 });
-
-    await db.delete(teamMembers).where(eq(teamMembers.userId, user.id));
-
-    if (current.role === "leader") {
-      const remaining = await db
-        .select({ id: teamMembers.id, userId: teamMembers.userId })
-        .from(teamMembers)
-        .where(eq(teamMembers.teamId, current.teamId))
-        .orderBy(asc(teamMembers.createdAt))
-        .limit(1);
-      if (remaining.length === 0) {
-        await db.delete(teams).where(eq(teams.id, current.teamId));
-      } else {
-        await db.update(teamMembers).set({ role: "leader" }).where(eq(teamMembers.id, remaining[0].id));
-      }
-    }
+    const res = await TeamRoster.leave(ctx);
+    if (!res.ok) return data({ error: res.message }, { status: 400 });
     return redirect("/team");
   }
 
