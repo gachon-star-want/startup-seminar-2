@@ -1,12 +1,9 @@
 import { useState } from "react";
 import { data, Form, Link, useActionData } from "react-router";
 import type { Route } from "./+types/assignments.$id";
-import { and, eq } from "drizzle-orm";
-import { assignments, submissionFiles, submissions, teamMembers, teams } from "~/db/schema";
-import { requireUser } from "~/lib/session";
-import { getCloudflare } from "~/lib/env";
+import { requireAppContext } from "~/lib/context.server";
+import { SubmissionHub } from "~/modules/submissions/index.server";
 import { MAX_FILES_PER_SUBMISSION, MAX_FILE_MB } from "~/lib/constants";
-import { inferMimeType } from "~/lib/mime";
 import { dDay, fmtKST } from "~/lib/time";
 import { IconArrowLeft } from "~/components/icons";
 import {
@@ -19,222 +16,26 @@ import {
 } from "~/components/ui";
 
 export async function loader({ request, context, params }: Route.LoaderArgs) {
-  const { user, db } = await requireUser(request, context);
-
-  const [[assignment], [membership]] = await Promise.all([
-    db
-      .select()
-      .from(assignments)
-      .where(eq(assignments.id, params.id!))
-      .limit(1),
-    db
-      .select({ teamId: teamMembers.teamId, teamName: teams.name })
-      .from(teamMembers)
-      .innerJoin(teams, eq(teamMembers.teamId, teams.id))
-      .where(eq(teamMembers.userId, user.id))
-      .limit(1),
-  ]);
-  if (!assignment) throw new Response("과제를 찾을 수 없어요", { status: 404 });
-
-  const now = new Date();
-  const closed = assignment.dueAt < now;
-
-  const isTeam = assignment.unit === "team";
-  if (isTeam && !membership) {
-    return {
-      assignment: { ...assignment, dueAt: assignment.dueAt.toISOString() },
-      closed,
-      myTeam: null,
-      submission: null,
-    };
-  }
-
-  const conditions = [eq(submissions.assignmentId, assignment.id)];
-  if (isTeam && membership) conditions.push(eq(submissions.teamId, membership.teamId));
-  else conditions.push(eq(submissions.userId, user.id));
-
-  const [submission] = await db
-    .select()
-    .from(submissions)
-    .where(and(...conditions))
-    .limit(1);
-
-  const files = submission
-    ? await db.select().from(submissionFiles).where(eq(submissionFiles.submissionId, submission.id))
-    : [];
-
-  return {
-    assignment: { ...assignment, dueAt: assignment.dueAt.toISOString() },
-    closed,
-    myTeam: isTeam ? membership : null,
-    submission: submission
-      ? {
-          id: submission.id,
-          content: submission.content,
-          link: submission.link,
-          updatedAt: submission.updatedAt.toISOString(),
-          files: files.map((f) => ({
-            id: f.id,
-            filename: f.filename,
-            size: f.size,
-          })),
-        }
-      : null,
-  };
-}
-
-function sanitizeFilename(name: string): string {
-  return name.replace(/[/\\?%*:|"<>]/g, "_").slice(0, 200) || "file";
+  const ctx = await requireAppContext(request, context);
+  return SubmissionHub.getStudentAssignment(ctx, params.id!);
 }
 
 export async function action({ request, context, params }: Route.ActionArgs) {
-  const { user, db } = await requireUser(request, context);
-  const { env } = getCloudflare(context);
+  const ctx = await requireAppContext(request, context);
   const form = await request.formData();
   const intent = String(form.get("intent") ?? "");
 
-  const [assignment] = await db
-    .select()
-    .from(assignments)
-    .where(eq(assignments.id, params.id!))
-    .limit(1);
-  if (!assignment) throw new Response("과제를 찾을 수 없어요", { status: 404 });
-
-  const [membership] = await db
-    .select({ teamId: teamMembers.teamId })
-    .from(teamMembers)
-    .where(eq(teamMembers.userId, user.id))
-    .limit(1);
-  const isTeam = assignment.unit === "team";
-  if (isTeam && !membership) {
-    return data({ error: "팀 과제예요. 먼저 팀에 합류해 주세요." }, { status: 400 });
-  }
-
-  // 내(우리 팀) 제출 찾기
-  const findConditions = [eq(submissions.assignmentId, assignment.id)];
-  if (isTeam && membership) findConditions.push(eq(submissions.teamId, membership.teamId));
-  else findConditions.push(eq(submissions.userId, user.id));
-  const [existing] = await db
-    .select()
-    .from(submissions)
-    .where(and(...findConditions))
-    .limit(1);
-
-  if (assignment.dueAt < new Date()) {
-    return data({ error: "마감된 과제예요. 수정할 수 없어요." }, { status: 400 });
-  }
-
-  // 개별 파일 즉시 삭제
   if (intent === "deleteFile") {
     const fileId = String(form.get("fileId") ?? "");
-    const [file] = await db
-      .select()
-      .from(submissionFiles)
-      .where(eq(submissionFiles.id, fileId))
-      .limit(1);
-    if (!file || !existing || file.submissionId !== existing.id) {
-      return data({ error: "파일을 찾을 수 없어요." }, { status: 400 });
-    }
-    await db.delete(submissionFiles).where(eq(submissionFiles.id, fileId));
-    try {
-      await env.FILES.delete(file.r2Key);
-    } catch {
-      // R2 삭제 실패는 무시
-    }
-    return { ok: true, message: "파일이 삭제되었어요." };
+    const result = await SubmissionHub.deleteSubmissionFile(ctx, params.id!, fileId);
+    if (!result.ok) return data({ error: result.message }, { status: 400 });
+    return result;
   }
 
-  // 과제 제출 및 수정 (동시 파일 삭제/추가 지원)
   if (intent === "submit") {
-    const content = String(form.get("content") ?? "").trim();
-    const link = String(form.get("link") ?? "").trim();
-    const deleteFileIds = form.getAll("deleteFileIds").map(String);
-    const newFiles = form.getAll("files").filter((f): f is File => f instanceof File && f.size > 0);
-
-    const existingFiles = existing
-      ? await db.select().from(submissionFiles).where(eq(submissionFiles.submissionId, existing.id))
-      : [];
-
-    const deleteSet = new Set(deleteFileIds);
-    const remainingFiles = existingFiles.filter((f) => !deleteSet.has(f.id));
-
-    if (!content && !link && remainingFiles.length === 0 && newFiles.length === 0) {
-      return data({ error: "내용, 링크, 파일 중 하나는 등록해 주세요." }, { status: 400 });
-    }
-
-    for (const f of newFiles) {
-      if (f.size > MAX_FILE_MB * 1024 * 1024) {
-        return data({ error: `'${f.name}' 파일이 ${MAX_FILE_MB}MB를 초과해요.` }, { status: 400 });
-      }
-    }
-
-    // 파일 개수 제한 (남은 파일 + 새 파일)
-    if (remainingFiles.length + newFiles.length > MAX_FILES_PER_SUBMISSION) {
-      return data(
-        {
-          error: `파일은 최대 ${MAX_FILES_PER_SUBMISSION}개까지 첨부할 수 있어요. (유지할 파일 ${remainingFiles.length}개 + 새 파일 ${newFiles.length}개)`,
-        },
-        { status: 400 },
-      );
-    }
-
-    // 1. 삭제 대상으로 선택된 파일들 정리
-    if (deleteFileIds.length > 0 && existing) {
-      for (const f of existingFiles) {
-        if (deleteSet.has(f.id)) {
-          await db.delete(submissionFiles).where(eq(submissionFiles.id, f.id));
-          try {
-            await env.FILES.delete(f.r2Key);
-          } catch {
-            // R2 삭제 에러는 무시
-          }
-        }
-      }
-    }
-
-    // 2. 제출 레코드 생성 또는 수정
-    let submissionId: string;
-    if (existing) {
-      await db
-        .update(submissions)
-        .set({ content: content || null, link: link || null, updatedAt: new Date() })
-        .where(eq(submissions.id, existing.id));
-      submissionId = existing.id;
-    } else {
-      const [created] = await db
-        .insert(submissions)
-        .values({
-          assignmentId: assignment.id,
-          userId: user.id,
-          teamId: isTeam && membership ? membership.teamId : null,
-          content: content || null,
-          link: link || null,
-        })
-        .returning();
-      submissionId = created.id;
-    }
-
-    // 3. 새 파일 R2 업로드 및 DB 등록
-    const ownerKey = isTeam && membership ? membership.teamId : user.id;
-    for (const file of newFiles) {
-      const mime = inferMimeType(file.name, file.type);
-      const key = `submissions/${assignment.id}/${ownerKey}/${crypto.randomUUID()}-${sanitizeFilename(file.name)}`;
-      await env.FILES.put(key, await file.arrayBuffer(), {
-        httpMetadata: { contentType: mime },
-      });
-      await db.insert(submissionFiles).values({
-        submissionId,
-        filename: file.name,
-        r2Key: key,
-        size: file.size,
-        mime,
-      });
-    }
-
-    return {
-      ok: true,
-      message: existing ? "과제가 성공적으로 수정되었어요!" : "과제가 성공적으로 제출되었어요!",
-    };
+    const result = await SubmissionHub.saveSubmission(ctx, params.id!, form);
+    if (!result.ok) return data({ error: result.message }, { status: 400 });
+    return result;
   }
 
   return data({ error: "알 수 없는 요청이에요." }, { status: 400 });

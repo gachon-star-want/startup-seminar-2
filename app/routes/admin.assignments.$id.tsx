@@ -1,135 +1,39 @@
 import { useState } from "react";
 import { Form, Link, redirect, useActionData } from "react-router";
 import type { Route } from "./+types/admin.assignments.$id";
-import { eq, inArray } from "drizzle-orm";
-import { assignments, submissionFiles, submissions, teamMembers, teams, users } from "~/db/schema";
-import { requireAdmin } from "~/lib/session";
+import { requireAdminAppContext } from "~/lib/context.server";
+import { SubmissionHub } from "~/modules/submissions/index.server";
 import { fmtKST } from "~/lib/time";
 import { IconArrowLeft } from "~/components/icons";
 import { Badge, Card, EmptyState, ErrorText, Field, SectionTitle, formatBytes } from "~/components/ui";
 
-function toKstDatetimeLocal(d: Date): string {
-  const kstMs = d.getTime() + 9 * 60 * 60 * 1000;
-  return new Date(kstMs).toISOString().slice(0, 16);
-}
-
 export async function loader({ request, context, params }: Route.LoaderArgs) {
-  const { db } = await requireAdmin(request, context);
-
-  const [assignment] = await db.select().from(assignments).where(eq(assignments.id, params.id!)).limit(1);
-  if (!assignment) throw new Response("과제를 찾을 수 없어요", { status: 404 });
-
-  // 제출 목록과 (팀 or 사용자 목록)을 병렬 조회
-  const [rows, targetList] = await Promise.all([
-    db
-      .select({
-        submission: submissions,
-        userName: users.name,
-        teamName: teams.name,
-      })
-      .from(submissions)
-      .innerJoin(users, eq(submissions.userId, users.id))
-      .leftJoin(teams, eq(submissions.teamId, teams.id))
-      .where(eq(submissions.assignmentId, assignment.id)),
-    assignment.unit === "team"
-      ? db.select({ id: teams.id, name: teams.name }).from(teams)
-      : db.select({ id: users.id, name: users.name }).from(users),
-  ]);
-
-  // 해당 과제의 제출물들에 속한 파일만 inArray로 정밀 조회 (전체 테이블 풀스캔 제거)
-  const subIds = rows.map((r) => r.submission.id);
-  const files =
-    subIds.length > 0
-      ? await db.select().from(submissionFiles).where(inArray(submissionFiles.submissionId, subIds))
-      : [];
-
-  const filesBySubmission = new Map<string, typeof files>();
-  for (const f of files) {
-    const list = filesBySubmission.get(f.submissionId) ?? [];
-    list.push(f);
-    filesBySubmission.set(f.submissionId, list);
-  }
-
-  // 미제출 목록
-  let missing: { label: string }[] = [];
-  if (assignment.unit === "team") {
-    const submittedTeamIds = new Set(rows.map((r) => r.submission.teamId).filter(Boolean));
-    missing = (targetList as { id: string; name: string }[])
-      .filter((t) => !submittedTeamIds.has(t.id))
-      .map((t) => ({ label: `${t.name} 팀` }));
-  } else {
-    const submittedUserIds = new Set(rows.map((r) => r.submission.userId));
-    missing = (targetList as { id: string; name: string }[])
-      .filter((u) => !submittedUserIds.has(u.id))
-      .map((u) => ({ label: u.name }));
-  }
-
-  return {
-    assignment: {
-      id: assignment.id,
-      title: assignment.title,
-      description: assignment.description,
-      unit: assignment.unit,
-      dueAt: assignment.dueAt.toISOString(),
-      dueAtLocal: toKstDatetimeLocal(assignment.dueAt),
-    },
-    submissions: rows
-      .map((r) => ({
-        id: r.submission.id,
-        content: r.submission.content,
-        link: r.submission.link,
-        userName: r.userName,
-        teamName: r.teamName,
-        updatedAt: r.submission.updatedAt.toISOString(),
-        files: (filesBySubmission.get(r.submission.id) ?? []).map((f) => ({
-          id: f.id,
-          filename: f.filename,
-          size: f.size,
-        })),
-      }))
-      .sort((a, b) => (a.teamName ?? a.userName).localeCompare(b.teamName ?? b.userName, "ko")),
-    missing,
-  };
+  const ctx = await requireAdminAppContext(request, context);
+  return SubmissionHub.getAdminOverview(ctx, params.id!);
 }
 
 export async function action({ request, context, params }: Route.ActionArgs) {
-  const { db } = await requireAdmin(request, context);
+  const ctx = await requireAdminAppContext(request, context);
   const form = await request.formData();
   const intent = String(form.get("intent") ?? "");
 
   if (intent === "update") {
-    const title = String(form.get("title") ?? "").trim();
-    const description = String(form.get("description") ?? "").trim();
-    const dueAtRaw = String(form.get("dueAt") ?? "").trim();
-    const unit = String(form.get("unit") ?? "team");
-
-    if (!title) return { error: "과제 제목을 입력해 주세요." };
-    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(dueAtRaw)) {
-      return { error: "마감일시를 입력해 주세요." };
-    }
-    const dueAt = new Date(`${dueAtRaw}:00+09:00`);
-    if (Number.isNaN(dueAt.getTime())) return { error: "마감일시가 올바르지 않아요." };
-    if (!["team", "individual"].includes(unit)) return { error: "제출 단위가 올바르지 않아요." };
-
-    await db
-      .update(assignments)
-      .set({
-        title,
-        description: description || null,
-        dueAt,
-        unit,
-      })
-      .where(eq(assignments.id, params.id!));
-
-    return { ok: true, message: "과제 설정이 성공적으로 수정되었어요." };
+    const result = await SubmissionHub.updateAssignment(ctx, params.id!, {
+      title: String(form.get("title") ?? ""),
+      description: String(form.get("description") ?? ""),
+      dueAtRaw: String(form.get("dueAt") ?? ""),
+      unit: String(form.get("unit") ?? "team"),
+    });
+    if (!result.ok) return { error: result.message, ok: false };
+    return { ok: true, message: result.message, error: undefined };
   }
 
   if (intent === "delete") {
-    await db.delete(assignments).where(eq(assignments.id, params.id!));
+    await SubmissionHub.deleteAssignment(ctx, params.id!);
     return redirect("/admin/assignments");
   }
 
-  return { error: "알 수 없는 요청이에요." };
+  return { error: "알 수 없는 요청이에요.", ok: false };
 }
 
 export default function AdminAssignmentDetailRoute({ loaderData }: Route.ComponentProps) {

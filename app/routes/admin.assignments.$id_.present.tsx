@@ -2,97 +2,19 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } fro
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { Link, useNavigate } from "react-router";
 import type { Route } from "./+types/admin.assignments.$id_.present";
-import { eq, inArray } from "drizzle-orm";
-import { assignments, submissionFiles, submissions, teams, users } from "~/db/schema";
-import { requireAdmin } from "~/lib/session";
+import { requireAdminAppContext } from "~/lib/context.server";
+import { SubmissionHub } from "~/modules/submissions/index.server";
 import { IconArrowLeft } from "~/components/icons";
 import { Card, EmptyState, formatBytes } from "~/components/ui";
 
 const PdfStage = lazy(() => import("~/components/present/PdfStage"));
 const PptxStage = lazy(() => import("~/components/present/PptxStage"));
 
-type PresentFile = { id: string; filename: string; mime: string | null; size: number };
-type PresentSub = {
-  id: string;
-  sortKey: string;
-  label: string; // 팀명(팀 과제) 또는 이름(개인 과제)
-  presenter: string; // 실제 제출자
-  content: string | null;
-  link: string | null;
-  updatedAt: string;
-  files: PresentFile[];
-};
+type PresentFile = { id: string; filename: string; mime?: string | null; size: number };
 
 export async function loader({ request, context, params }: Route.LoaderArgs) {
-  const { db } = await requireAdmin(request, context);
-
-  const [assignment] = await db
-    .select()
-    .from(assignments)
-    .where(eq(assignments.id, params.id!))
-    .limit(1);
-  if (!assignment) throw new Response("과제를 찾을 수 없어요", { status: 404 });
-
-  const rows = await db
-    .select({ submission: submissions, userName: users.name, teamName: teams.name })
-    .from(submissions)
-    .innerJoin(users, eq(submissions.userId, users.id))
-    .leftJoin(teams, eq(submissions.teamId, teams.id))
-    .where(eq(submissions.assignmentId, assignment.id));
-
-  const subIds = rows.map((r) => r.submission.id);
-  const files =
-    subIds.length > 0
-      ? await db.select().from(submissionFiles).where(inArray(submissionFiles.submissionId, subIds))
-      : [];
-  const filesBySub = new Map<string, typeof files>();
-  for (const f of files) {
-    const list = filesBySub.get(f.submissionId) ?? [];
-    list.push(f);
-    filesBySub.set(f.submissionId, list);
-  }
-
-  const submissionsList: PresentSub[] = rows
-    .map((r) => ({
-      id: r.submission.id,
-      sortKey: (assignment.unit === "team" ? r.teamName : r.userName) ?? r.userName,
-      label: assignment.unit === "team" ? `${r.teamName ?? "팀명없음"} 팀` : r.userName,
-      presenter: r.userName,
-      content: r.submission.content,
-      link: r.submission.link,
-      updatedAt: r.submission.updatedAt.toISOString(),
-      files: (filesBySub.get(r.submission.id) ?? []).map((f) => ({
-        id: f.id,
-        filename: f.filename,
-        mime: f.mime,
-        size: f.size,
-      })),
-    }))
-    .sort((a, b) => a.sortKey.localeCompare(b.sortKey, "ko"));
-
-  // 미제출 목록
-  let missing: string[] = [];
-  if (assignment.unit === "team") {
-    const allTeams = await db.select({ id: teams.id, name: teams.name }).from(teams);
-    const submittedTeamIds = new Set(rows.map((r) => r.submission.teamId).filter(Boolean));
-    missing = allTeams.filter((t) => !submittedTeamIds.has(t.id)).map((t) => `${t.name} 팀`);
-  } else {
-    const allUsers = await db.select({ id: users.id, name: users.name }).from(users);
-    const submittedUserIds = new Set(rows.map((r) => r.submission.userId));
-    missing = allUsers.filter((u) => !submittedUserIds.has(u.id)).map((u) => u.name);
-  }
-  missing.sort((a, b) => a.localeCompare(b, "ko"));
-
-  return {
-    assignment: {
-      id: assignment.id,
-      title: assignment.title,
-      unit: assignment.unit,
-      dueAt: assignment.dueAt.toISOString(),
-    },
-    submissions: submissionsList,
-    missing,
-  };
+  const ctx = await requireAdminAppContext(request, context);
+  return SubmissionHub.getAdminPresentOverview(ctx, params.id!);
 }
 
 type Slide =

@@ -52,7 +52,11 @@ export async function getCurrentUser(
 export async function requireUser(request: Request, context: Readonly<RouterContextProvider>) {
   const session = await getCurrentUser(request, context);
   if (!session.user) throw redirect("/login");
-  return session;
+  return session as {
+    user: typeof users.$inferSelect;
+    env: ReturnType<typeof getCloudflare>["env"];
+    db: DB;
+  };
 }
 
 export async function isAdmin(

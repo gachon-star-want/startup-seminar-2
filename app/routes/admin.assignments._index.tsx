@@ -1,70 +1,39 @@
 import { Form, Link, useActionData } from "react-router";
 import type { Route } from "./+types/admin.assignments._index";
-import { desc, eq, sql } from "drizzle-orm";
-import { assignments, submissions } from "~/db/schema";
-import { requireAdmin } from "~/lib/session";
+import { requireAdminAppContext } from "~/lib/context.server";
+import { SubmissionHub } from "~/modules/submissions/index.server";
 import { fmtKST } from "~/lib/time";
 import { Badge, Card, ErrorText, Field, SectionTitle } from "~/components/ui";
 
 export async function loader({ request, context }: Route.LoaderArgs) {
-  const { db } = await requireAdmin(request, context);
-
-  const [list, counts] = await Promise.all([
-    db.select().from(assignments).orderBy(desc(assignments.dueAt)),
-    db
-      .select({ assignmentId: submissions.assignmentId, count: sql<number>`count(*)::int` })
-      .from(submissions)
-      .groupBy(submissions.assignmentId),
-  ]);
-  const countMap = new Map(counts.map((c) => [c.assignmentId, c.count]));
-
-  return {
-    assignments: list.map((a) => ({
-      id: a.id,
-      title: a.title,
-      description: a.description,
-      dueAt: a.dueAt.toISOString(),
-      unit: a.unit,
-      submissionCount: countMap.get(a.id) ?? 0,
-    })),
-  };
+  const ctx = await requireAdminAppContext(request, context);
+  const list = await SubmissionHub.getAdminList(ctx);
+  return { assignments: list };
 }
 
 export async function action({ request, context }: Route.ActionArgs) {
-  const { db } = await requireAdmin(request, context);
+  const ctx = await requireAdminAppContext(request, context);
   const form = await request.formData();
   const intent = String(form.get("intent") ?? "");
 
   if (intent === "create") {
-    const title = String(form.get("title") ?? "").trim();
-    const description = String(form.get("description") ?? "").trim();
-    const dueAtRaw = String(form.get("dueAt") ?? "").trim();
-    const unit = String(form.get("unit") ?? "team");
-
-    if (!title) return { error: "과제 제목을 입력해 주세요." };
-    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(dueAtRaw)) {
-      return { error: "마감일시를 입력해 주세요." };
-    }
-    const dueAt = new Date(`${dueAtRaw}:00+09:00`); // 입력은 한국 시간 기준
-    if (Number.isNaN(dueAt.getTime())) return { error: "마감일시가 올바르지 않아요." };
-    if (!["team", "individual"].includes(unit)) return { error: "제출 단위가 올바르지 않아요." };
-
-    await db.insert(assignments).values({
-      title,
-      description: description || null,
-      dueAt,
-      unit,
+    const result = await SubmissionHub.createAssignment(ctx, {
+      title: String(form.get("title") ?? ""),
+      description: String(form.get("description") ?? ""),
+      dueAtRaw: String(form.get("dueAt") ?? ""),
+      unit: String(form.get("unit") ?? "team"),
     });
-    return { ok: true };
+    if (!result.ok) return { error: result.message, ok: false };
+    return { ok: true, error: undefined };
   }
 
   if (intent === "delete") {
     const id = String(form.get("assignmentId") ?? "");
-    await db.delete(assignments).where(eq(assignments.id, id));
-    return { ok: true };
+    await SubmissionHub.deleteAssignment(ctx, id);
+    return { ok: true, error: undefined };
   }
 
-  return { error: "알 수 없는 요청이에요." };
+  return { error: "알 수 없는 요청이에요.", ok: false };
 }
 
 export default function AdminAssignmentsRoute({ loaderData }: Route.ComponentProps) {
