@@ -5,6 +5,12 @@ compatibility_date = "2026-09-01"
 [assets]
 directory = "./build/client"
 
+# Neon free는 5분 미사용 시 DB가 슬립해 첫 클릭이 0.5~1s 늦어진다.
+# 수업 직전~수업 중(화 09:00-11:59 KST)과 과제 마감 전 저녁(목 21:00-23:59 KST)에
+# 4분 간격 select 1 핑으로 compute를 깨어 있게 한다 (약 26h/월 < free 191.9h).
+[triggers]
+crons = ["*/4 0-2 * * 2", "*/4 12-14 * * 4"]
+
 [[r2_buckets]]
 binding = "FILES"
 bucket_name = "seminar-files"

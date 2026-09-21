@@ -37,6 +37,9 @@ export const AttendanceDesk = {
       };
     }
 
+    // 캐시된 birth4가 있으면 그 값으로 확정 판정(birth4는 최초 1회만 등록되는
+    // write-once 값이라 캐시 지연 영향 없음). 캐시가 null이면 다른 기기/격리에서
+    // 방금 등록했을 수 있으니 DB 최신값으로 재검증한다.
     const birth4Check = verifyBirth4(ctx.user.birth4, input.birth4Input);
     if (!birth4Check.ok) {
       return {
@@ -44,6 +47,21 @@ export const AttendanceDesk = {
         code: birth4Check.code,
         message: birth4Check.message,
       };
+    }
+    let registeredBirth4 = ctx.user.birth4;
+    if (registeredBirth4 === null) {
+      const [freshUser] = await ctx.db
+        .select({ birth4: users.birth4 })
+        .from(users)
+        .where(eq(users.id, ctx.user.id))
+        .limit(1);
+      if (freshUser?.birth4) {
+        registeredBirth4 = freshUser.birth4;
+        const recheck = verifyBirth4(registeredBirth4, input.birth4Input);
+        if (!recheck.ok) {
+          return { ok: false, code: recheck.code, message: recheck.message };
+        }
+      }
     }
 
     // 출석 세션 조회
@@ -71,7 +89,7 @@ export const AttendanceDesk = {
     }
 
     // 첫 출석체크 시 생일 4자리 등록
-    if (!ctx.user.birth4) {
+    if (!registeredBirth4) {
       await ctx.db
         .update(users)
         .set({ birth4: birth4Check.birth4 })

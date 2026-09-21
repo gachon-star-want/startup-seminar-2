@@ -25,6 +25,35 @@ type UserSession = {
 // getCurrentUser를 호출할 때 DB 쿼리가 중복 실행되지 않도록 WeakMap 캐싱
 const requestSessionCache = new WeakMap<Request, Promise<UserSession>>();
 
+// 격리(isolate) 단위 유저 마이크로캐시 — 매 화면 전환마다 세션 확인 SELECT가
+// DB 왕복 1라운드(미국 리전 기준 ~150ms)를 점유하는 것을 막는다.
+// 안전 근거: name/role은 런타임에 변경되지 않고, birth4는 쓰기 경로
+// (AttendanceDesk.checkIn)가 DB 최신값으로 검증하므로 캐시 지연 영향 없음.
+const USER_CACHE_TTL_MS = 60_000;
+const USER_CACHE_MAX = 256;
+const userCache = new Map<string, { user: typeof users.$inferSelect; exp: number }>();
+
+function getCachedUser(userId: string): typeof users.$inferSelect | null {
+  const hit = userCache.get(userId);
+  if (!hit) return null;
+  if (hit.exp < Date.now()) {
+    userCache.delete(userId);
+    return null;
+  }
+  return hit.user;
+}
+
+function setCachedUser(user: typeof users.$inferSelect): void {
+  if (userCache.size >= USER_CACHE_MAX) {
+    const now = Date.now();
+    for (const [id, entry] of userCache) {
+      if (entry.exp < now) userCache.delete(id);
+    }
+    if (userCache.size >= USER_CACHE_MAX) userCache.clear();
+  }
+  userCache.set(user.id, { user, exp: Date.now() + USER_CACHE_TTL_MS });
+}
+
 export async function getCurrentUser(
   request: Request,
   context: Readonly<RouterContextProvider>,
@@ -41,7 +70,10 @@ export async function getCurrentUser(
     const cookies = parseCookies(request.headers.get("cookie"));
     const userId = await readSessionToken(cookies[SESSION_COOKIE], sessionSecret(env));
     if (!userId) return { user: null, env, db };
+    const cached = getCachedUser(userId);
+    if (cached) return { user: cached, env, db };
     const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+    if (user) setCachedUser(user);
     return { user: user ?? null, env, db };
   })();
 

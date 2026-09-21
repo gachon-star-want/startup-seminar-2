@@ -188,7 +188,7 @@ export default function App({ loaderData }: Route.ComponentProps) {
                 key={to}
                 to={to}
                 end={end}
-                prefetch="intent"
+                prefetch={userName ? "render" : "intent"}
                 className={({ isActive }) =>
                   `nav-link${isActive ? " is-active" : ""}`
                 }
@@ -238,7 +238,7 @@ export default function App({ loaderData }: Route.ComponentProps) {
               key={to}
               to={to}
               end={end}
-              prefetch="intent"
+              prefetch={userName ? "render" : "intent"}
               className={({ isActive }) =>
                 `tabbar__item${isActive ? " is-active" : ""}`
               }
