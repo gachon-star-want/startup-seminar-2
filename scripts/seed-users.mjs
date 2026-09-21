@@ -1,26 +1,10 @@
 /**
- * 창업심화세미나2 — 수강 명단 시드 스크립트
- * 학생 16명 + 김호 교수(role=professor)를 users 에 등록한다 (이미 있으면 건너뜀).
- * 기존 계정(이름 기준)은 건드리지 않는다.
+ * 창업심화세미나2 — 수강 명단 시드 스크립트 (D1)
+ * 학생 17명 + 김호 교수(role=professor)를 users 에 등록한다 (이름이 이미 있으면 건너뜀).
  *
- * 사용: DATABASE_URL을 .env (또는 환경변수)에 넣고 `node scripts/seed-users.mjs`
+ * 사용: `npm run db:seed:users` (remote) / `node scripts/seed-users.mjs --local` (로컬 개발 DB)
  */
-import { readFileSync } from "node:fs";
-import { neon } from "@neondatabase/serverless";
-
-function loadDatabaseUrl() {
-  if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
-  try {
-    const raw = readFileSync(new URL("../.env", import.meta.url), "utf8");
-    for (const line of raw.split("\n")) {
-      const m = line.match(/^\s*DATABASE_URL\s*=\s*(.+)\s*$/);
-      if (m) return m[1].trim().replace(/^["']|["']$/g, "");
-    }
-  } catch {
-    // .env 없음
-  }
-  throw new Error("DATABASE_URL을 찾을 수 없어요. .env 파일을 확인해 주세요.");
-}
+import { runD1, sumChanges } from "./lib/d1.mjs";
 
 const ROSTER = [
   { name: "김호", role: "professor" },
@@ -43,18 +27,12 @@ const ROSTER = [
   { name: "최찬미", role: "student" },
 ];
 
-const sql = neon(loadDatabaseUrl());
+const local = process.argv.includes("--local");
 
-let created = 0;
-for (const person of ROSTER) {
-  const rows = await sql`
-    INSERT INTO users (name, role)
-    VALUES (${person.name}, ${person.role})
-    ON CONFLICT (name) DO NOTHING
-    RETURNING id
-  `;
-  if (rows.length > 0) created++;
-  console.log(`${person.name} (${person.role}) ${rows.length > 0 ? "추가됨" : "이미 존재"}`);
-}
+const stmts = ROSTER.map((person) => {
+  const id = crypto.randomUUID();
+  return `INSERT OR IGNORE INTO users (id, name, role, created_at) VALUES ('${id}', '${person.name.replace(/'/g, "''")}', '${person.role}', ${Date.now()});`;
+});
 
-console.log(`\n완료: ${created}명 생성 / 명단 총 ${ROSTER.length}명`);
+const created = sumChanges(runD1(stmts.join("\n"), { local }));
+console.log(`완료: ${created}명 신규 등록 / 명단 총 ${ROSTER.length}명 [${local ? "local" : "remote"}]`);

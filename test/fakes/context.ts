@@ -16,7 +16,7 @@ export function createTestContext(overrides?: Partial<AppContext>): AppContext {
   const fakeR2 = createFakeR2();
 
   const fakeEnv: any = {
-    DATABASE_URL: "postgres://mock:mock@localhost:5432/mock_db",
+    DB: {},
     SESSION_SECRET: "test-super-secret-key-32chars-long!",
     ADMIN_PASSWORD: "0806",
     FILES: fakeR2,

@@ -10,13 +10,15 @@
     "deploy": "react-router build && wrangler deploy",
     "typecheck": "wrangler types && react-router typegen && tsc",
     "cf-typegen": "wrangler types",
-    "db:push": "drizzle-kit push",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "wrangler d1 migrations apply startup-seminar-2 --remote",
+    "db:migrate:local": "wrangler d1 migrations apply startup-seminar-2 --local",
     "db:seed": "node scripts/seed.mjs",
     "db:seed:users": "node scripts/seed-users.mjs",
+    "db:seed:local": "node scripts/seed.mjs --local && node scripts/seed-users.mjs --local",
     "test": "vitest run"
   },
   "dependencies": {
-    "@neondatabase/serverless": "^1.1.0",
     "drizzle-orm": "^0.45.2",
     "isbot": "^5",
     "pptx-preview": "^1.0.7",

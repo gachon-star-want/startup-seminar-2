@@ -1,25 +1,10 @@
 /**
- * 창업심화세미나2 — 수업 날짜 시드 스크립트
+ * 창업심화세미나2 — 수업 날짜 시드 스크립트 (D1)
  * 매주 화요일(10:00 KST 기준) 세션을 attendance_sessions 에 등록한다 (이미 있으면 건너뜀).
  *
- * 사용: DATABASE_URL을 .env (또는 환경변수)에 넣고 `npm run db:seed`
+ * 사용: `npm run db:seed` (remote) / `node scripts/seed.mjs --local` (로컬 개발 DB)
  */
-import { readFileSync } from "node:fs";
-import { neon } from "@neondatabase/serverless";
-
-function loadDatabaseUrl() {
-  if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
-  try {
-    const raw = readFileSync(new URL("../.env", import.meta.url), "utf8");
-    for (const line of raw.split("\n")) {
-      const m = line.match(/^\s*DATABASE_URL\s*=\s*(.+)\s*$/);
-      if (m) return m[1].trim().replace(/^["']|["']$/g, "");
-    }
-  } catch {
-    // .env 없음
-  }
-  throw new Error("DATABASE_URL을 찾을 수 없어요. .env 파일을 확인해 주세요.");
-}
+import { runD1, sumChanges } from "./lib/d1.mjs";
 
 const START = "2026-09-01"; // 화요일 — 1학기 첫 수업
 const END = "2026-12-08"; // 화요일 — 종강 (총 15회)
@@ -39,23 +24,13 @@ function tuesdays(startYmd, endYmd) {
 }
 
 const dates = tuesdays(START, END);
-const sql = neon(loadDatabaseUrl());
+const local = process.argv.includes("--local");
+const ms = (date, h) => Date.parse(`${date}T${h}:00+09:00`);
 
-let created = 0;
-for (const date of dates) {
-  const rows = await sql`
-    INSERT INTO attendance_sessions (session_date, opens_at, late_from, closes_at)
-    VALUES (
-      ${date},
-      ${`${date}T${WINDOWS.open}:00+09:00`}::timestamptz,
-      ${`${date}T${WINDOWS.late}:00+09:00`}::timestamptz,
-      ${`${date}T${WINDOWS.close}:00+09:00`}::timestamptz
-    )
-    ON CONFLICT (session_date) DO NOTHING
-    RETURNING id
-  `;
-  if (rows.length > 0) created++;
-  console.log(`${date} ${rows.length > 0 ? "추가됨" : "이미 존재"}`);
-}
+const stmts = dates.map((date) => {
+  const id = crypto.randomUUID();
+  return `INSERT OR IGNORE INTO attendance_sessions (id, session_date, opens_at, late_from, closes_at, created_at) VALUES ('${id}', '${date}', ${ms(date, WINDOWS.open)}, ${ms(date, WINDOWS.late)}, ${ms(date, WINDOWS.close)}, ${Date.now()});`;
+});
 
-console.log(`\n완료: ${created}개 생성 / 총 ${dates.length}개 화요일 (${START} ~ ${END})`);
+const created = sumChanges(runD1(stmts.join("\n"), { local }));
+console.log(`완료: ${created}개 신규 등록 / 총 ${dates.length}개 화요일 (${START} ~ ${END}) [${local ? "local" : "remote"}]`);

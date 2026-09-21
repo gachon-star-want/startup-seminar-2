@@ -10,10 +10,10 @@ import { Card, ErrorText, Field, PageHeader } from "~/components/ui";
 
 export async function action({ request, context }: Route.ActionArgs) {
   const { env } = getCloudflare(context);
-  if (!env.DATABASE_URL) {
-    throw new Error("DATABASE_URL 시크릿이 설정되지 않았습니다.");
+  if (!env.DB) {
+    throw new Error("D1 바인딩(DB)이 wrangler.toml에 설정되지 않았습니다.");
   }
-  const db = getDb(env.DATABASE_URL);
+  const db = getDb(env.DB);
   const form = await request.formData();
   const name = String(form.get("name") ?? "").trim();
 

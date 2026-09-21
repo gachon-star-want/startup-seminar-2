@@ -63,10 +63,10 @@ export async function getCurrentUser(
 
   const sessionPromise = (async (): Promise<UserSession> => {
     const { env } = getCloudflare(context);
-    if (!env.DATABASE_URL) {
-      throw new Error("DATABASE_URL 시크릿이 설정되지 않았습니다. (wrangler secret put DATABASE_URL)");
+    if (!env.DB) {
+      throw new Error("D1 바인딩(DB)이 wrangler.toml에 설정되지 않았습니다.");
     }
-    const db = getDb(env.DATABASE_URL);
+    const db = getDb(env.DB);
     const cookies = parseCookies(request.headers.get("cookie"));
     const userId = await readSessionToken(cookies[SESSION_COOKIE], sessionSecret(env));
     if (!userId) return { user: null, env, db };
