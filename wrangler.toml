@@ -2,7 +2,8 @@ name = "startup-seminar-2"
 main = "./workers/app.ts"
 compatibility_date = "2026-09-01"
 
-assets = {}
+[assets]
+directory = "./build/client"
 
 [[r2_buckets]]
 binding = "FILES"

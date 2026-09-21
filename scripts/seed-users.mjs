@@ -40,6 +40,7 @@ const ROSTER = [
   { name: "이재빈", role: "student" },
   { name: "이원영", role: "student" },
   { name: "박성진", role: "student" },
+  { name: "최찬미", role: "student" },
 ];
 
 const sql = neon(loadDatabaseUrl());

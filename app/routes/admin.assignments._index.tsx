@@ -84,10 +84,14 @@ export default function AdminAssignmentsRoute({ loaderData }: Route.ComponentPro
             <Field label="마감일시 (한국 시간)" htmlFor="a-due">
               <input id="a-due" name="dueAt" type="datetime-local" className="input num" required />
             </Field>
-            <Field label="제출 단위" htmlFor="a-unit">
+            <Field
+              label="과제 제출 단위 (팀 vs 개인)"
+              htmlFor="a-unit"
+              hint="팀 과제는 팀원 누구나 제출/수정할 수 있고 조당 1건으로 기록됩니다. 개인 과제는 학생별로 각자 제출합니다."
+            >
               <select id="a-unit" name="unit" className="input" defaultValue="team">
-                <option value="team">팀 과제 (조당 1건)</option>
-                <option value="individual">개인 과제</option>
+                <option value="team">👥 팀 과제 (조당 1건 · 팀원 공통 제출)</option>
+                <option value="individual">👤 개인 과제 (학생별 1인 1건 개별 제출)</option>
               </select>
             </Field>
           </div>

@@ -116,7 +116,7 @@ export default function AssignmentsRoute({ loaderData }: Route.ComponentProps) {
 
       <Card>
         <p className="small muted help-text">
-          📎 텍스트·링크·파일(PPT/PDF 등, 파일당 최대 20MB)로 제출할 수 있어요. 팀 과제는 팀원 누구나
+          📎 텍스트·링크·첨부파일(모든 파일 형식 지원, 최대 10개 · 파일당 최대 100MB)로 제출 및 수정할 수 있어요. 팀 과제는 팀원 누구나
           제출/수정 가능하고 조당 1건으로 기록돼요.
         </p>
       </Card>

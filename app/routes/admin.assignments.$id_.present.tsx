@@ -417,7 +417,7 @@ export default function PresentRoute({ loaderData }: Route.ComponentProps) {
     }
   };
 
-  const teamChip = `팀 ${currentSubIndex + 1}/${subs.length}`;
+  const teamChip = `${a.unit === "team" ? "팀" : "제출"} ${currentSubIndex + 1}/${subs.length}`;
   const slideChip = `${pos.slide + 1}/${slides.length}`;
 
   return (

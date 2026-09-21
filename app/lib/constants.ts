@@ -28,5 +28,6 @@ export const ATTENDANCE_LABELS: Record<string, string> = {
 };
 
 /** 파일 업로드 제한 */
-export const MAX_FILE_MB = 20;
-export const MAX_FILES_PER_SUBMISSION = 5;
+export const MAX_FILE_MB = 100;
+export const MAX_FILES_PER_SUBMISSION = 10;
+
