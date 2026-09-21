@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Form, Link, redirect, useActionData } from "react-router";
 import type { Route } from "./+types/admin.assignments.$id";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { assignments, submissionFiles, submissions, teamMembers, teams, users } from "~/db/schema";
 import { requireAdmin } from "~/lib/session";
 import { fmtKST } from "~/lib/time";
@@ -19,18 +19,30 @@ export async function loader({ request, context, params }: Route.LoaderArgs) {
   const [assignment] = await db.select().from(assignments).where(eq(assignments.id, params.id!)).limit(1);
   if (!assignment) throw new Response("과제를 찾을 수 없어요", { status: 404 });
 
-  const rows = await db
-    .select({
-      submission: submissions,
-      userName: users.name,
-      teamName: teams.name,
-    })
-    .from(submissions)
-    .innerJoin(users, eq(submissions.userId, users.id))
-    .leftJoin(teams, eq(submissions.teamId, teams.id))
-    .where(eq(submissions.assignmentId, assignment.id));
+  // 제출 목록과 (팀 or 사용자 목록)을 병렬 조회
+  const [rows, targetList] = await Promise.all([
+    db
+      .select({
+        submission: submissions,
+        userName: users.name,
+        teamName: teams.name,
+      })
+      .from(submissions)
+      .innerJoin(users, eq(submissions.userId, users.id))
+      .leftJoin(teams, eq(submissions.teamId, teams.id))
+      .where(eq(submissions.assignmentId, assignment.id)),
+    assignment.unit === "team"
+      ? db.select({ id: teams.id, name: teams.name }).from(teams)
+      : db.select({ id: users.id, name: users.name }).from(users),
+  ]);
 
-  const files = await db.select().from(submissionFiles);
+  // 해당 과제의 제출물들에 속한 파일만 inArray로 정밀 조회 (전체 테이블 풀스캔 제거)
+  const subIds = rows.map((r) => r.submission.id);
+  const files =
+    subIds.length > 0
+      ? await db.select().from(submissionFiles).where(inArray(submissionFiles.submissionId, subIds))
+      : [];
+
   const filesBySubmission = new Map<string, typeof files>();
   for (const f of files) {
     const list = filesBySubmission.get(f.submissionId) ?? [];
@@ -41,15 +53,13 @@ export async function loader({ request, context, params }: Route.LoaderArgs) {
   // 미제출 목록
   let missing: { label: string }[] = [];
   if (assignment.unit === "team") {
-    const allTeams = await db.select({ id: teams.id, name: teams.name }).from(teams);
     const submittedTeamIds = new Set(rows.map((r) => r.submission.teamId).filter(Boolean));
-    missing = allTeams
+    missing = (targetList as { id: string; name: string }[])
       .filter((t) => !submittedTeamIds.has(t.id))
       .map((t) => ({ label: `${t.name} 팀` }));
   } else {
-    const allUsers = await db.select({ id: users.id, name: users.name }).from(users);
     const submittedUserIds = new Set(rows.map((r) => r.submission.userId));
-    missing = allUsers
+    missing = (targetList as { id: string; name: string }[])
       .filter((u) => !submittedUserIds.has(u.id))
       .map((u) => ({ label: u.name }));
   }

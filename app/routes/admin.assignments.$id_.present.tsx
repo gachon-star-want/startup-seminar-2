@@ -2,7 +2,7 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } fro
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { Link, useNavigate } from "react-router";
 import type { Route } from "./+types/admin.assignments.$id_.present";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { assignments, submissionFiles, submissions, teams, users } from "~/db/schema";
 import { requireAdmin } from "~/lib/session";
 import { IconArrowLeft } from "~/components/icons";
@@ -40,7 +40,11 @@ export async function loader({ request, context, params }: Route.LoaderArgs) {
     .leftJoin(teams, eq(submissions.teamId, teams.id))
     .where(eq(submissions.assignmentId, assignment.id));
 
-  const files = await db.select().from(submissionFiles);
+  const subIds = rows.map((r) => r.submission.id);
+  const files =
+    subIds.length > 0
+      ? await db.select().from(submissionFiles).where(inArray(submissionFiles.submissionId, subIds))
+      : [];
   const filesBySub = new Map<string, typeof files>();
   for (const f of files) {
     const list = filesBySub.get(f.submissionId) ?? [];

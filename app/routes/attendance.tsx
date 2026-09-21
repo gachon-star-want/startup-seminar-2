@@ -11,19 +11,20 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   const now = new Date();
   const today = kstYMD(now);
 
-  const sessions = await db
-    .select()
-    .from(attendanceSessions)
-    .orderBy(desc(attendanceSessions.sessionDate));
-
   const isProfessor = user.role === "professor";
 
-  const records = isProfessor
-    ? []
-    : await db
-        .select()
-        .from(attendanceRecords)
-        .where(eq(attendanceRecords.userId, user.id));
+  const [sessions, records] = await Promise.all([
+    db
+      .select()
+      .from(attendanceSessions)
+      .orderBy(desc(attendanceSessions.sessionDate)),
+    isProfessor
+      ? Promise.resolve([])
+      : db
+          .select()
+          .from(attendanceRecords)
+          .where(eq(attendanceRecords.userId, user.id)),
+  ]);
   const recordBySession = new Map(records.map((r) => [r.sessionId, r]));
 
   const rows = sessions.map((s) => {

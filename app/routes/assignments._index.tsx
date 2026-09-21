@@ -1,6 +1,6 @@
 import { Link } from "react-router";
 import type { Route } from "./+types/assignments._index";
-import { desc, eq, and } from "drizzle-orm";
+import { desc, eq, and, or, inArray } from "drizzle-orm";
 import { assignments as assignmentsTable, submissions, teamMembers } from "~/db/schema";
 import { requireUser } from "~/lib/session";
 import { dDay, fmtKST } from "~/lib/time";
@@ -10,37 +10,55 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   const { user, db } = await requireUser(request, context);
   const now = new Date();
 
-  const list = await db.select().from(assignmentsTable).orderBy(desc(assignmentsTable.dueAt));
+  // 과제 목록과 내 팀 소속을 병렬로 1회 왕복에 조회
+  const [list, [membership]] = await Promise.all([
+    db.select().from(assignmentsTable).orderBy(desc(assignmentsTable.dueAt)),
+    db
+      .select({ teamId: teamMembers.teamId })
+      .from(teamMembers)
+      .where(eq(teamMembers.userId, user.id))
+      .limit(1),
+  ]);
 
-  const [membership] = await db
-    .select({ teamId: teamMembers.teamId })
-    .from(teamMembers)
-    .where(eq(teamMembers.userId, user.id))
-    .limit(1);
+  const assignmentIds = list.map((a) => a.id);
 
-  const result = [];
-  for (const a of list) {
-    const conditions = [eq(submissions.assignmentId, a.id)];
-    if (a.unit === "team") {
-      if (membership) conditions.push(eq(submissions.teamId, membership.teamId));
-    } else {
-      conditions.push(eq(submissions.userId, user.id));
-    }
-    const [sub] = await db
-      .select({ id: submissions.id })
-      .from(submissions)
-      .where(and(...conditions))
-      .limit(1);
-    result.push({
+  // N+1 루프 쿼리를 완전히 제거하고 단 1회의 쿼리로 내(우리 팀) 제출 목록 일괄 조회
+  const subConditions = [eq(submissions.userId, user.id)];
+  if (membership?.teamId) {
+    subConditions.push(eq(submissions.teamId, membership.teamId));
+  }
+
+  const mySubmissions =
+    assignmentIds.length > 0
+      ? await db
+          .select({
+            assignmentId: submissions.assignmentId,
+            userId: submissions.userId,
+            teamId: submissions.teamId,
+          })
+          .from(submissions)
+          .where(and(inArray(submissions.assignmentId, assignmentIds), or(...subConditions)))
+      : [];
+
+  const teamSubMap = new Set(
+    mySubmissions.filter((s) => s.teamId && s.teamId === membership?.teamId).map((s) => s.assignmentId),
+  );
+  const userSubMap = new Set(
+    mySubmissions.filter((s) => s.userId === user.id).map((s) => s.assignmentId),
+  );
+
+  const result = list.map((a) => {
+    const isSubmitted = a.unit === "team" ? teamSubMap.has(a.id) : userSubMap.has(a.id);
+    return {
       id: a.id,
       title: a.title,
       description: a.description,
       dueAt: a.dueAt,
       unit: a.unit,
       closed: a.dueAt < now,
-      submitted: Boolean(sub),
-    });
-  }
+      submitted: isSubmitted,
+    };
+  });
 
   return { assignments: result };
 }
@@ -53,7 +71,7 @@ export default function AssignmentsRoute({ loaderData }: Route.ComponentProps) {
     const dd = dDay(a.dueAt);
     return (
       <li key={a.id}>
-        <Link to={`/assignments/${a.id}`} className="item-link">
+        <Link to={`/assignments/${a.id}`} prefetch="intent" className="item-link">
           <div className="minw-0">
             <div className="cluster">
               <span className="item-link__title" title={a.title}>{a.title}</span>
@@ -92,7 +110,7 @@ export default function AssignmentsRoute({ loaderData }: Route.ComponentProps) {
 
   return (
     <div className="stack-xl">
-      <PageHeader title="과제" sub="텍스트 · 링크 · 파일로 제출할 수 있어요" />
+      <PageHeader title="과제" sub="텍스트 · 링크 · 첨부파일로 제출할 수 있어요" />
 
       <section>
         <h2 className="section-label">진행 중</h2>

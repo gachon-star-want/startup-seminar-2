@@ -9,21 +9,25 @@ import { Card, EmptyState, SectionTitle, Stat } from "~/components/ui";
 export async function loader({ request, context }: Route.LoaderArgs) {
   const { db } = await requireAdmin(request, context);
 
-  const allUsers = await db.select().from(users);
-  const memberships = await db.select({ userId: teamMembers.userId, teamName: teams.name }).from(teamMembers).innerJoin(teams, eq(teamMembers.teamId, teams.id));
-  const teamByUser = new Map(memberships.map((m) => [m.userId, m.teamName]));
-
-  const allTeams = await db.select().from(teams);
-  const sessions = await db.select().from(attendanceSessions);
-  const students = allUsers.filter((u) => u.role !== "professor");
-
-  // 오늘 세션 출석 요약 (학생만 집계)
   const today = kstYMD();
-  const [todaySession] = await db
-    .select()
-    .from(attendanceSessions)
-    .where(eq(attendanceSessions.sessionDate, today))
-    .limit(1);
+
+  // 대시보드 기초 데이터를 단 1회 왕복에 병렬 조회
+  const [allUsers, memberships, allTeams, sessions, [todaySession]] = await Promise.all([
+    db.select().from(users),
+    db
+      .select({ userId: teamMembers.userId, teamName: teams.name })
+      .from(teamMembers)
+      .innerJoin(teams, eq(teamMembers.teamId, teams.id)),
+    db.select().from(teams),
+    db.select().from(attendanceSessions),
+    db
+      .select()
+      .from(attendanceSessions)
+      .where(eq(attendanceSessions.sessionDate, today))
+      .limit(1),
+  ]);
+  const teamByUser = new Map(memberships.map((m) => [m.userId, m.teamName]));
+  const students = allUsers.filter((u) => u.role !== "professor");
   let todaySummary: { present: number; late: number; absent: number } | null = null;
   if (todaySession) {
     const records = await db
@@ -76,7 +80,7 @@ export default function AdminIndexRoute({ loaderData }: Route.ComponentProps) {
         <Card>
           <SectionTitle
             right={
-              <Link to="/admin/attendance" className="card__link">
+              <Link to="/admin/attendance" prefetch="intent" className="card__link">
                 출석 관리 →
               </Link>
             }

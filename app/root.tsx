@@ -153,6 +153,7 @@ export default function App({ loaderData }: Route.ComponentProps) {
             <>
               <Link
                 to="/admin"
+                prefetch="intent"
                 className="icon-btn"
                 aria-label="관리자"
                 title="관리자"
@@ -168,7 +169,7 @@ export default function App({ loaderData }: Route.ComponentProps) {
           ) : (
             <>
               <ThemeToggle />
-              <Link to="/login" className="btn btn--primary btn--sm">
+              <Link to="/login" prefetch="intent" className="btn btn--primary btn--sm">
                 <IconLogin />
                 로그인
               </Link>
@@ -187,6 +188,7 @@ export default function App({ loaderData }: Route.ComponentProps) {
                 key={to}
                 to={to}
                 end={end}
+                prefetch="intent"
                 className={({ isActive }) =>
                   `nav-link${isActive ? " is-active" : ""}`
                 }
@@ -198,6 +200,7 @@ export default function App({ loaderData }: Route.ComponentProps) {
             <p className="sidebar__section">운영</p>
             <NavLink
               to="/admin"
+              prefetch="intent"
               className={({ isActive }) =>
                 `nav-link${isActive ? " is-active" : ""}`
               }
@@ -214,7 +217,7 @@ export default function App({ loaderData }: Route.ComponentProps) {
                   <LogoutForm className="sidebar__logout">로그아웃</LogoutForm>
                 </>
               ) : (
-                <Link to="/login" className="btn btn--primary btn--sm">
+                <Link to="/login" prefetch="intent" className="btn btn--primary btn--sm">
                   <IconLogin />
                   로그인
                 </Link>
@@ -235,6 +238,7 @@ export default function App({ loaderData }: Route.ComponentProps) {
               key={to}
               to={to}
               end={end}
+              prefetch="intent"
               className={({ isActive }) =>
                 `tabbar__item${isActive ? " is-active" : ""}`
               }

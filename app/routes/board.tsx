@@ -9,11 +9,13 @@ import { EmptyState, MilestoneBadge, PageHeader } from "~/components/ui";
 export async function loader({ request, context }: Route.LoaderArgs) {
   const { db } = await requireUser(request, context);
 
-  const allTeams = await db.select().from(teams);
-  const memberships = await db
-    .select({ teamId: teamMembers.teamId, userName: users.name })
-    .from(teamMembers)
-    .innerJoin(users, eq(teamMembers.userId, users.id));
+  const [allTeams, memberships] = await Promise.all([
+    db.select().from(teams),
+    db
+      .select({ teamId: teamMembers.teamId, userName: users.name })
+      .from(teamMembers)
+      .innerJoin(users, eq(teamMembers.userId, users.id)),
+  ]);
 
   const membersByTeam = new Map<string, string[]>();
   for (const m of memberships) {

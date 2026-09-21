@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { data, Form, Link, redirect, useActionData } from "react-router";
 import type { Route } from "./+types/_index";
-import { and, asc, eq, gt } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, or } from "drizzle-orm";
 import {
   assignments as assignmentsTable,
   attendanceRecords,
@@ -34,54 +34,72 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   const now = new Date();
   const today = kstYMD(now);
 
-  const [todaySession] = await db
-    .select()
-    .from(attendanceSessions)
-    .where(eq(attendanceSessions.sessionDate, today))
-    .limit(1);
-
-  const [nextSession] = todaySession
-    ? [undefined]
-    : await db
-        .select()
-        .from(attendanceSessions)
-        .where(gt(attendanceSessions.opensAt, now))
-        .orderBy(asc(attendanceSessions.opensAt))
-        .limit(1);
+  // 1차 병렬 쿼리: 오늘 세션, 다음 세션, 내 팀 정보, 오픈 과제(3개)를 단 1회 왕복에 동시 조회
+  const [[todaySession], [nextSession], [membership], openAssignments] = await Promise.all([
+    db
+      .select()
+      .from(attendanceSessions)
+      .where(eq(attendanceSessions.sessionDate, today))
+      .limit(1),
+    db
+      .select()
+      .from(attendanceSessions)
+      .where(gt(attendanceSessions.opensAt, now))
+      .orderBy(asc(attendanceSessions.opensAt))
+      .limit(1),
+    db
+      .select({ team: teams, role: teamMembers.role })
+      .from(teamMembers)
+      .innerJoin(teams, eq(teamMembers.teamId, teams.id))
+      .where(eq(teamMembers.userId, user.id))
+      .limit(1),
+    db
+      .select()
+      .from(assignmentsTable)
+      .where(gt(assignmentsTable.dueAt, now))
+      .orderBy(asc(assignmentsTable.dueAt))
+      .limit(3),
+  ]);
 
   const focus = todaySession ?? nextSession ?? null;
+  const focusPhase = focus ? sessionPhase(focus, now) : null;
 
-  let myAttendance: { status: string; checkedAt: Date } | null = null;
-  let focusPhase: SessionPhase | null = null;
-  if (focus) {
-    focusPhase = sessionPhase(focus, now);
-    const [record] = await db
-      .select()
-      .from(attendanceRecords)
-      .where(and(eq(attendanceRecords.sessionId, focus.id), eq(attendanceRecords.userId, user.id)))
-      .limit(1);
-    if (record) myAttendance = { status: record.status, checkedAt: record.checkedAt };
-  }
+  // 2차 병렬 쿼리: 출석 레코드, 팀원 명단, 오픈 과제 제출 여부를 N+1 없이 일괄 조회
+  const assignmentIds = openAssignments.map((a) => a.id);
+  const subConditions = [eq(submissions.userId, user.id)];
+  if (membership?.team.id) subConditions.push(eq(submissions.teamId, membership.team.id));
 
-  const [membership] = await db
-    .select({ team: teams, role: teamMembers.role })
-    .from(teamMembers)
-    .innerJoin(teams, eq(teamMembers.teamId, teams.id))
-    .where(eq(teamMembers.userId, user.id))
-    .limit(1);
+  const [recordRows, memberRows, subRows] = await Promise.all([
+    focus
+      ? db
+          .select({ status: attendanceRecords.status, checkedAt: attendanceRecords.checkedAt })
+          .from(attendanceRecords)
+          .where(and(eq(attendanceRecords.sessionId, focus.id), eq(attendanceRecords.userId, user.id)))
+          .limit(1)
+      : Promise.resolve([]),
+    membership
+      ? db
+          .select({ userName: users.name })
+          .from(teamMembers)
+          .innerJoin(users, eq(teamMembers.userId, users.id))
+          .where(eq(teamMembers.teamId, membership.team.id))
+      : Promise.resolve([]),
+    assignmentIds.length > 0
+      ? db
+          .select({
+            assignmentId: submissions.assignmentId,
+            userId: submissions.userId,
+            teamId: submissions.teamId,
+          })
+          .from(submissions)
+          .where(and(inArray(submissions.assignmentId, assignmentIds), or(...subConditions)))
+      : Promise.resolve([]),
+  ]);
 
-  let teamInfo: {
-    name: string;
-    members: string[];
-    role: string;
-    missing: string[];
-  } | null = null;
+  const myAttendance = recordRows[0] ? { status: recordRows[0].status, checkedAt: recordRows[0].checkedAt } : null;
+
+  let teamInfo = null;
   if (membership) {
-    const memberRows = await db
-      .select({ userName: users.name })
-      .from(teamMembers)
-      .innerJoin(users, eq(teamMembers.userId, users.id))
-      .where(eq(teamMembers.teamId, membership.team.id));
     const t = membership.team;
     const missing: string[] = [];
     if (!t.itemName?.trim()) missing.push("아이템 미정");
@@ -98,28 +116,20 @@ export async function loader({ request, context }: Route.LoaderArgs) {
     };
   }
 
-  const openAssignments = await db
-    .select()
-    .from(assignmentsTable)
-    .where(gt(assignmentsTable.dueAt, now))
-    .orderBy(asc(assignmentsTable.dueAt))
-    .limit(3);
+  const teamSubSet = new Set(
+    subRows.filter((s) => s.teamId && s.teamId === membership?.team.id).map((s) => s.assignmentId),
+  );
+  const userSubSet = new Set(
+    subRows.filter((s) => s.userId === user.id).map((s) => s.assignmentId),
+  );
 
-  const assignmentInfos = [];
-  for (const a of openAssignments) {
-    const conditions = [eq(submissions.assignmentId, a.id)];
-    if (a.unit === "team") {
-      if (membership) conditions.push(eq(submissions.teamId, membership.team.id));
-    } else {
-      conditions.push(eq(submissions.userId, user.id));
-    }
-    const [sub] = await db
-      .select({ id: submissions.id })
-      .from(submissions)
-      .where(and(...conditions))
-      .limit(1);
-    assignmentInfos.push({ id: a.id, title: a.title, dueAt: a.dueAt, unit: a.unit, submitted: Boolean(sub) });
-  }
+  const assignmentInfos = openAssignments.map((a) => ({
+    id: a.id,
+    title: a.title,
+    dueAt: a.dueAt,
+    unit: a.unit,
+    submitted: a.unit === "team" ? teamSubSet.has(a.id) : userSubSet.has(a.id),
+  }));
 
   return {
     userName: user.name,
@@ -264,7 +274,7 @@ export default function IndexRoute({ loaderData }: Route.ComponentProps) {
               <p className="hero__label">{a.isToday ? "TODAY · 오늘 수업" : "NEXT · 다음 수업"}</p>
               <p className="hero__date num">{a.dateLabel}</p>
             </div>
-            <Link to="/attendance" className="card__link">
+            <Link to="/attendance" prefetch="intent" className="card__link">
               전체 기록 →
             </Link>
           </div>
@@ -351,7 +361,7 @@ export default function IndexRoute({ loaderData }: Route.ComponentProps) {
         <Card>
           <SectionTitle
             right={
-              <Link to="/team" className="card__link">
+              <Link to="/team" prefetch="intent" className="card__link">
                 관리 →
               </Link>
             }
@@ -361,7 +371,7 @@ export default function IndexRoute({ loaderData }: Route.ComponentProps) {
           {!team ? (
             <EmptyState>
               아직 팀이 없어요.{" "}
-              <Link to="/team" className="card__link">
+              <Link to="/team" prefetch="intent" className="card__link">
                 팀 만들기 / 초대코드로 합류 →
               </Link>
             </EmptyState>
@@ -385,7 +395,7 @@ export default function IndexRoute({ loaderData }: Route.ComponentProps) {
         <Card>
           <SectionTitle
             right={
-              <Link to="/assignments" className="card__link">
+              <Link to="/assignments" prefetch="intent" className="card__link">
                 전체 →
               </Link>
             }
@@ -400,7 +410,7 @@ export default function IndexRoute({ loaderData }: Route.ComponentProps) {
                 const dd = dDay(as.dueAt);
                 return (
                   <li key={as.id}>
-                    <Link to={`/assignments/${as.id}`} className="item-link">
+                    <Link to={`/assignments/${as.id}`} prefetch="intent" className="item-link">
                       <div className="minw-0">
                         <div className="item-link__title">{as.title}</div>
                         <div className="item-link__meta num">

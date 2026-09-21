@@ -28,7 +28,7 @@ export async function loader({ request, context, params }: Route.LoaderArgs) {
     headers: {
       "Content-Type": file.mime || "application/octet-stream",
       "Content-Disposition": `${disposition}; filename*=UTF-8''${encodedName}`,
-      "Cache-Control": "private, no-store",
+      "Cache-Control": "private, max-age=300",
     },
   });
 }

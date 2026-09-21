@@ -9,11 +9,13 @@ import { Badge, Card, ErrorText, Field, SectionTitle } from "~/components/ui";
 export async function loader({ request, context }: Route.LoaderArgs) {
   const { db } = await requireAdmin(request, context);
 
-  const list = await db.select().from(assignments).orderBy(desc(assignments.dueAt));
-  const counts = await db
-    .select({ assignmentId: submissions.assignmentId, count: sql<number>`count(*)::int` })
-    .from(submissions)
-    .groupBy(submissions.assignmentId);
+  const [list, counts] = await Promise.all([
+    db.select().from(assignments).orderBy(desc(assignments.dueAt)),
+    db
+      .select({ assignmentId: submissions.assignmentId, count: sql<number>`count(*)::int` })
+      .from(submissions)
+      .groupBy(submissions.assignmentId),
+  ]);
   const countMap = new Map(counts.map((c) => [c.assignmentId, c.count]));
 
   return {
@@ -113,7 +115,7 @@ export default function AdminAssignmentsRoute({ loaderData }: Route.ComponentPro
               <div className="cluster cluster--between">
                 <div className="minw-0">
                   <div className="cluster">
-                    <Link to={`/admin/assignments/${a.id}`} className="link-title" title={a.title}>
+                    <Link to={`/admin/assignments/${a.id}`} prefetch="intent" className="link-title" title={a.title}>
                       {a.title}
                     </Link>
                     <Badge tone={a.unit === "team" ? "indigo" : "gray"}>
@@ -134,7 +136,7 @@ export default function AdminAssignmentsRoute({ loaderData }: Route.ComponentPro
                   </p>
                 </div>
                 <div className="cluster cluster--col">
-                  <Link to={`/admin/assignments/${a.id}`} className="card__link">
+                  <Link to={`/admin/assignments/${a.id}`} prefetch="intent" className="card__link">
                     제출물 보기 →
                   </Link>
                   <Form method="post">

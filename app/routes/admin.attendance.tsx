@@ -10,13 +10,17 @@ import { Card, ErrorText, SectionTitle } from "~/components/ui";
 export async function loader({ request, context }: Route.LoaderArgs) {
   const { db } = await requireAdmin(request, context);
 
-  const sessions = await db.select().from(attendanceSessions).orderBy(asc(attendanceSessions.sessionDate));
-  const allUsers = (await db.select().from(users))
+  const [sessions, rawUsers, records] = await Promise.all([
+    db.select().from(attendanceSessions).orderBy(asc(attendanceSessions.sessionDate)),
+    db.select().from(users),
+    db
+      .select({ sessionId: attendanceRecords.sessionId, userId: attendanceRecords.userId, status: attendanceRecords.status })
+      .from(attendanceRecords),
+  ]);
+
+  const allUsers = rawUsers
     .filter((u) => u.role !== "professor")
     .sort((a, b) => a.name.localeCompare(b.name, "ko"));
-  const records = await db
-    .select({ sessionId: attendanceRecords.sessionId, userId: attendanceRecords.userId, status: attendanceRecords.status })
-    .from(attendanceRecords);
 
   const now = new Date();
   const recordMap = new Map(records.map((r) => [`${r.sessionId}:${r.userId}`, r.status]));

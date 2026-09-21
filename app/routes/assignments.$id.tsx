@@ -21,22 +21,23 @@ import {
 export async function loader({ request, context, params }: Route.LoaderArgs) {
   const { user, db } = await requireUser(request, context);
 
-  const [assignment] = await db
-    .select()
-    .from(assignments)
-    .where(eq(assignments.id, params.id!))
-    .limit(1);
+  const [[assignment], [membership]] = await Promise.all([
+    db
+      .select()
+      .from(assignments)
+      .where(eq(assignments.id, params.id!))
+      .limit(1),
+    db
+      .select({ teamId: teamMembers.teamId, teamName: teams.name })
+      .from(teamMembers)
+      .innerJoin(teams, eq(teamMembers.teamId, teams.id))
+      .where(eq(teamMembers.userId, user.id))
+      .limit(1),
+  ]);
   if (!assignment) throw new Response("과제를 찾을 수 없어요", { status: 404 });
 
   const now = new Date();
   const closed = assignment.dueAt < now;
-
-  const [membership] = await db
-    .select({ teamId: teamMembers.teamId, teamName: teams.name })
-    .from(teamMembers)
-    .innerJoin(teams, eq(teamMembers.teamId, teams.id))
-    .where(eq(teamMembers.userId, user.id))
-    .limit(1);
 
   const isTeam = assignment.unit === "team";
   if (isTeam && !membership) {
