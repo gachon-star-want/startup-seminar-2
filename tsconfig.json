@@ -4,7 +4,8 @@
     "workers/**/*",
     "drizzle.config.ts",
     "worker-configuration.d.ts",
-    ".react-router/types/**/*"
+    ".react-router/types/**/*",
+    "test/**/*"
   ],
   "compilerOptions": {
     "target": "ES2022",
