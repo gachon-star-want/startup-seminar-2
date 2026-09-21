@@ -15,13 +15,6 @@ export function kstInstant(ymd: string, hm: string): Date {
   return new Date(`${ymd}T${hm}:00+09:00`);
 }
 
-/** 수업 세션 기준 시각 및 상태 판정 (출석 도메인 모듈로부터 하위 호환 re-export) */
-export {
-  SESSION_WINDOWS,
-  sessionPhase,
-  type SessionPhase,
-} from "~/modules/attendance/rules";
-
 export function fmtKST(d: Date, opts?: Intl.DateTimeFormatOptions): string {
   return new Intl.DateTimeFormat("ko-KR", { timeZone: TZ, ...opts }).format(d);
 }

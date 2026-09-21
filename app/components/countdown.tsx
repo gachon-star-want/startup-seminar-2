@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRevalidator } from "react-router";
-import { kstInstant, kstYMD, SESSION_WINDOWS, type SessionPhase } from "~/lib/time";
+import { SESSION_WINDOWS, type SessionPhase } from "~/modules/attendance/rules";
+import { kstInstant, kstYMD } from "~/lib/time";
 
 function pad(n: number): string {
   return String(n).padStart(2, "0");

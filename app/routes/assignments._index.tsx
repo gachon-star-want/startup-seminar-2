@@ -2,13 +2,13 @@ import { Link } from "react-router";
 import type { Route } from "./+types/assignments._index";
 import { desc, eq, and, or, inArray } from "drizzle-orm";
 import { assignments as assignmentsTable, submissions, teamMembers } from "~/db/schema";
-import { requireUser } from "~/lib/session";
+import { requireAppContext } from "~/lib/context.server";
 import { dDay, fmtKST } from "~/lib/time";
 import { Badge, Card, EmptyState, PageHeader } from "~/components/ui";
 
 export async function loader({ request, context }: Route.LoaderArgs) {
-  const { user, db } = await requireUser(request, context);
-  const now = new Date();
+  const ctx = await requireAppContext(request, context);
+  const { user, db, now } = ctx;
 
   // 과제 목록과 내 팀 소속을 병렬로 1회 왕복에 조회
   const [list, [membership]] = await Promise.all([

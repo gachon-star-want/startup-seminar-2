@@ -11,15 +11,15 @@ import {
   teams,
   users,
 } from "~/db/schema";
-import { requireUser } from "~/lib/session";
 import { requireAppContext } from "~/lib/context.server";
 import { AttendanceDesk } from "~/modules/attendance/index.server";
+import { sessionPhase, type SessionPhase } from "~/modules/attendance/rules";
 import {
   ATTENDANCE_LABELS,
   BUSINESS_STATUS_LABELS,
   MAIL_ORDER_STATUS_LABELS,
 } from "~/lib/constants";
-import { dDay, fmtKST, fmtKSTFull, kstYMD, sessionPhase, ymdLabel, type SessionPhase } from "~/lib/time";
+import { dDay, fmtKST, fmtKSTFull, kstYMD, ymdLabel } from "~/lib/time";
 import { LiveCountdown } from "~/components/countdown";
 import {
   AttendanceBadge,
@@ -32,8 +32,8 @@ import {
 } from "~/components/ui";
 
 export async function loader({ request, context }: Route.LoaderArgs) {
-  const { user, db } = await requireUser(request, context);
-  const now = new Date();
+  const ctx = await requireAppContext(request, context);
+  const { user, db, now } = ctx;
   const today = kstYMD(now);
 
   // 1차 병렬 쿼리: 오늘 세션, 다음 세션, 내 팀 정보, 오픈 과제(3개)를 단 1회 왕복에 동시 조회

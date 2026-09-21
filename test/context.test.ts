@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { createFakeR2 } from "./fakes/r2";
 import { createTestContext, createTestUser } from "./fakes/context";
-import { kstYMD, sessionPhase, dDay } from "~/lib/time";
+import { kstYMD, dDay } from "~/lib/time";
+import { sessionPhase } from "~/modules/attendance/rules";
 
 describe("Phase 0 Test Harness: FakeR2Bucket", () => {
   it("should store and retrieve data with stream and metadata", async () => {
