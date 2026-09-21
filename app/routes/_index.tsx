@@ -12,6 +12,8 @@ import {
   users,
 } from "~/db/schema";
 import { requireUser } from "~/lib/session";
+import { requireAppContext } from "~/lib/context.server";
+import { AttendanceDesk } from "~/modules/attendance/index.server";
 import {
   ATTENDANCE_LABELS,
   BUSINESS_STATUS_LABELS,
@@ -151,64 +153,14 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 }
 
 export async function action({ request, context }: Route.ActionArgs) {
-  const { user, db } = await requireUser(request, context);
+  const ctx = await requireAppContext(request, context);
   const form = await request.formData();
   const sessionId = String(form.get("sessionId") ?? "");
-  const birth4 = String(form.get("birth4") ?? "").trim();
+  const birth4Input = String(form.get("birth4") ?? "");
 
-  const [session] = await db
-    .select()
-    .from(attendanceSessions)
-    .where(eq(attendanceSessions.id, sessionId))
-    .limit(1);
-  if (!session) {
-    return data({ error: "출석 세션을 찾을 수 없어요." }, { status: 400 });
-  }
-
-  const [existingRecord] = await db
-    .select()
-    .from(attendanceRecords)
-    .where(and(eq(attendanceRecords.sessionId, sessionId), eq(attendanceRecords.userId, user.id)))
-    .limit(1);
-  if (existingRecord) {
-    return data({ error: "이미 출석체크 했어요!" }, { status: 400 });
-  }
-
-  if (user.role === "professor") {
-    return data({ error: "교수 계정은 출석 대상이 아니에요." }, { status: 400 });
-  }
-
-  if (!/^\d{4}$/.test(birth4)) {
-    return data({ error: "생일 4자리(MMDD)를 숫자 4자리로 입력해 주세요." }, { status: 400 });
-  }
-
-  if (user.birth4) {
-    if (birth4 !== user.birth4) {
-      return data({ error: "생일 4자리(MMDD)가 일치하지 않아요." }, { status: 400 });
-    }
-  } else {
-    // 첫 출석체크 — 이번에 입력한 생일 4자리를 본인 확인용으로 등록
-    await db.update(users).set({ birth4 }).where(eq(users.id, user.id));
-  }
-
-  const phase = sessionPhase(session);
-  if (phase !== "present" && phase !== "late") {
-    return data({ error: "지금은 체크 가능한 시간이 아니에요 (10:00~11:00)." }, { status: 400 });
-  }
-
-  const inserted = await db
-    .insert(attendanceRecords)
-    .values({
-      sessionId,
-      userId: user.id,
-      status: phase === "present" ? "present" : "late",
-      source: "self",
-    })
-    .onConflictDoNothing()
-    .returning();
-
-  if (inserted.length === 0) {
-    return data({ error: "이미 출석체크 했어요!" }, { status: 400 });
+  const res = await AttendanceDesk.checkIn(ctx, { sessionId, birth4Input });
+  if (!res.ok) {
+    return data({ error: res.message }, { status: 400 });
   }
 
   return redirect("/");

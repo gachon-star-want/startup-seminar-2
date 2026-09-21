@@ -15,24 +15,12 @@ export function kstInstant(ymd: string, hm: string): Date {
   return new Date(`${ymd}T${hm}:00+09:00`);
 }
 
-/** 수업 세션 기준 시각 (KST) */
-export const SESSION_WINDOWS = {
-  open: "10:00", // 출석 오픈
-  late: "10:10", // 이후 체크는 지각
-  close: "11:00", // 체크 마감
-} as const;
-
-export type SessionPhase = "scheduled" | "present" | "late" | "closed";
-
-export function sessionPhase(
-  s: { opensAt: Date; lateFrom: Date; closesAt: Date },
-  now: Date = new Date(),
-): SessionPhase {
-  if (now < s.opensAt) return "scheduled";
-  if (now < s.lateFrom) return "present";
-  if (now < s.closesAt) return "late";
-  return "closed";
-}
+/** 수업 세션 기준 시각 및 상태 판정 (출석 도메인 모듈로부터 하위 호환 re-export) */
+export {
+  SESSION_WINDOWS,
+  sessionPhase,
+  type SessionPhase,
+} from "~/modules/attendance/rules";
 
 export function fmtKST(d: Date, opts?: Intl.DateTimeFormatOptions): string {
   return new Intl.DateTimeFormat("ko-KR", { timeZone: TZ, ...opts }).format(d);

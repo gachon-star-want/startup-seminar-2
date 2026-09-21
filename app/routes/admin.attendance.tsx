@@ -1,71 +1,31 @@
 import { useEffect, useState } from "react";
 import type { Route } from "./+types/admin.attendance";
 import { Form, useActionData, useNavigation } from "react-router";
-import { asc, and, eq } from "drizzle-orm";
-import { attendanceRecords, attendanceSessions, users } from "~/db/schema";
-import { requireAdmin } from "~/lib/session";
-import { kstInstant, SESSION_WINDOWS, sessionPhase, ymdLabel } from "~/lib/time";
+import { AttendanceDesk } from "~/modules/attendance/index.server";
+import { requireAdminAppContext } from "~/lib/context.server";
 import { Card, ErrorText, SectionTitle } from "~/components/ui";
 
 export async function loader({ request, context }: Route.LoaderArgs) {
-  const { db } = await requireAdmin(request, context);
-
-  const [sessions, rawUsers, records] = await Promise.all([
-    db.select().from(attendanceSessions).orderBy(asc(attendanceSessions.sessionDate)),
-    db.select().from(users),
-    db
-      .select({ sessionId: attendanceRecords.sessionId, userId: attendanceRecords.userId, status: attendanceRecords.status })
-      .from(attendanceRecords),
-  ]);
-
-  const allUsers = rawUsers
-    .filter((u) => u.role !== "professor")
-    .sort((a, b) => a.name.localeCompare(b.name, "ko"));
-
-  const now = new Date();
-  const recordMap = new Map(records.map((r) => [`${r.sessionId}:${r.userId}`, r.status]));
-
-  return {
-    sessions: sessions.map((s) => ({
-      id: s.id,
-      sessionDate: s.sessionDate,
-      label: ymdLabel(s.sessionDate),
-      phase: sessionPhase(s, now),
-    })),
-    users: allUsers.map((u) => ({ id: u.id, name: u.name })),
-    recordMap: Object.fromEntries(recordMap),
-  };
+  const ctx = await requireAdminAppContext(request, context);
+  return AttendanceDesk.getAdminBoard(ctx);
 }
 
 export async function action({ request, context }: Route.ActionArgs) {
-  const { db } = await requireAdmin(request, context);
+  const ctx = await requireAdminAppContext(request, context);
   const form = await request.formData();
   const intent = String(form.get("intent") ?? "");
 
   if (intent === "addSession") {
-    const date = String(form.get("date") ?? "").trim();
-    const note = String(form.get("note") ?? "").trim();
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      return { error: "날짜 형식이 올바르지 않아요." };
-    }
-    const inserted = await db
-      .insert(attendanceSessions)
-      .values({
-        sessionDate: date,
-        opensAt: kstInstant(date, SESSION_WINDOWS.open),
-        lateFrom: kstInstant(date, SESSION_WINDOWS.late),
-        closesAt: kstInstant(date, SESSION_WINDOWS.close),
-        note: note || null,
-      })
-      .onConflictDoNothing({ target: attendanceSessions.sessionDate })
-      .returning();
-    if (inserted.length === 0) return { error: `${ymdLabel(date)} 는 이미 등록된 날짜예요.` };
+    const date = String(form.get("date") ?? "");
+    const note = String(form.get("note") ?? "");
+    const res = await AttendanceDesk.addSession(ctx, { date, note });
+    if (!res.ok) return { error: res.message };
     return { ok: true };
   }
 
   if (intent === "deleteSession") {
     const id = String(form.get("sessionId") ?? "");
-    await db.delete(attendanceSessions).where(eq(attendanceSessions.id, id));
+    await AttendanceDesk.deleteSession(ctx, id);
     return { ok: true };
   }
 
@@ -73,52 +33,14 @@ export async function action({ request, context }: Route.ActionArgs) {
     const sessionId = String(form.get("sessionId") ?? "");
     const userId = String(form.get("userId") ?? "");
     const next = String(form.get("next") ?? "");
-    if (next === "none") {
-      await db
-        .delete(attendanceRecords)
-        .where(and(eq(attendanceRecords.sessionId, sessionId), eq(attendanceRecords.userId, userId)));
-    } else if (["present", "late", "absent"].includes(next)) {
-      await db
-        .insert(attendanceRecords)
-        .values({ sessionId, userId, status: next, source: "admin" })
-        .onConflictDoUpdate({
-          target: [attendanceRecords.sessionId, attendanceRecords.userId],
-          set: { status: next, source: "admin", checkedAt: new Date() },
-        });
-    }
+    await AttendanceDesk.setCellStatus(ctx, { sessionId, userId, nextStatus: next });
     return { ok: true };
   }
 
   if (intent === "markAllPresent") {
     const sessionId = String(form.get("sessionId") ?? "");
-    const [session] = await db
-      .select()
-      .from(attendanceSessions)
-      .where(eq(attendanceSessions.id, sessionId))
-      .limit(1);
-    if (!session) return { error: "수업 날짜를 찾을 수 없어요." };
-    if (sessionPhase(session, new Date()) === "scheduled") {
-      return { error: `${ymdLabel(session.sessionDate)} 은 아직 예정된 수업이에요.` };
-    }
-    const students = await db
-      .select({ id: users.id })
-      .from(users)
-      .where(eq(users.role, "student"));
-    if (students.length === 0) return { error: "학생 명단이 비어 있어요." };
-    await db
-      .insert(attendanceRecords)
-      .values(
-        students.map((s) => ({
-          sessionId,
-          userId: s.id,
-          status: "present",
-          source: "admin",
-        })),
-      )
-      .onConflictDoUpdate({
-        target: [attendanceRecords.sessionId, attendanceRecords.userId],
-        set: { status: "present", source: "admin", checkedAt: new Date() },
-      });
+    const res = await AttendanceDesk.markAllPresent(ctx, sessionId);
+    if (!res.ok) return { error: res.message };
     return { ok: true };
   }
 

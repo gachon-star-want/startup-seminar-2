@@ -1,54 +1,13 @@
 import type { Route } from "./+types/attendance";
-import { desc, eq } from "drizzle-orm";
-import { attendanceRecords, attendanceSessions } from "~/db/schema";
-import { requireUser } from "~/lib/session";
+import { AttendanceDesk } from "~/modules/attendance/index.server";
+import { requireAppContext } from "~/lib/context.server";
 import { ATTENDANCE_LABELS } from "~/lib/constants";
-import { fmtKST, kstYMD, sessionPhase, ymdLabel } from "~/lib/time";
+import { fmtKST } from "~/lib/time";
 import { AttendanceBadge, Card, EmptyState, PageHeader, Stat } from "~/components/ui";
 
 export async function loader({ request, context }: Route.LoaderArgs) {
-  const { user, db } = await requireUser(request, context);
-  const now = new Date();
-  const today = kstYMD(now);
-
-  const isProfessor = user.role === "professor";
-
-  const [sessions, records] = await Promise.all([
-    db
-      .select()
-      .from(attendanceSessions)
-      .orderBy(desc(attendanceSessions.sessionDate)),
-    isProfessor
-      ? Promise.resolve([])
-      : db
-          .select()
-          .from(attendanceRecords)
-          .where(eq(attendanceRecords.userId, user.id)),
-  ]);
-  const recordBySession = new Map(records.map((r) => [r.sessionId, r]));
-
-  const rows = sessions.map((s) => {
-    const record = recordBySession.get(s.id);
-    let status: string | null = record?.status ?? null;
-    if (!status && sessionPhase(s, now) === "closed") status = "absent"; // 미체크 + 마감 = 결석
-    return {
-      dateLabel: ymdLabel(s.sessionDate),
-      isFuture: s.sessionDate > today,
-      status,
-      checkedAt: record?.checkedAt ?? null,
-      source: record?.source ?? null,
-    };
-  });
-
-  const counted = isProfessor ? [] : rows.filter((r) => !r.isFuture && r.status);
-  const summary = {
-    total: counted.length,
-    present: counted.filter((r) => r.status === "present").length,
-    late: counted.filter((r) => r.status === "late").length,
-    absent: counted.filter((r) => r.status === "absent").length,
-  };
-
-  return { rows, summary, isProfessor };
+  const ctx = await requireAppContext(request, context);
+  return AttendanceDesk.getMyHistory(ctx);
 }
 
 export default function AttendanceRoute({ loaderData }: Route.ComponentProps) {
