@@ -1,4 +1,4 @@
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, ne } from "drizzle-orm";
 import { attendanceRecords, attendanceSessions, users } from "~/db/schema";
 import type { AdminAppContext, AppContext } from "~/lib/context.server";
 import { kstInstant, kstYMD, ymdLabel } from "~/lib/time";
@@ -199,8 +199,9 @@ export const AttendanceDesk = {
         .from(attendanceRecords),
     ]);
 
+    // 휴학(inactive) 학생은 출석 그리드에서 제외 — 기존 기록은 DB에 유지
     const allStudents = rawUsers
-      .filter((u) => u.role !== "professor")
+      .filter((u) => u.role !== "professor" && u.status !== "inactive")
       .sort((a, b) => a.name.localeCompare(b.name, "ko"));
 
     const recordMap = new Map(records.map((r) => [`${r.sessionId}:${r.userId}`, r.status]));
@@ -316,7 +317,7 @@ export const AttendanceDesk = {
     const students = await ctx.db
       .select({ id: users.id })
       .from(users)
-      .where(eq(users.role, "student"));
+      .where(and(eq(users.role, "student"), ne(users.status, "inactive")));
 
     if (students.length === 0) {
       return { ok: false, message: "학생 명단이 비어 있어요." };

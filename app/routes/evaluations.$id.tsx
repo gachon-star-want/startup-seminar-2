@@ -203,17 +203,21 @@ function EvaluationCard({
         </ul>
       ) : null}
 
+      {t.submissionId ? null : (
+        <p className="small faint mt-2">이 팀은 아직 발표 자료를 올리지 않았어요.</p>
+      )}
+
       {status ? (
         <p className="small faint mt-3">{status}</p>
       ) : (
         <>
-          <input type="hidden" name="submissionId" value={t.submissionId} />
+          <input type="hidden" name="teamId" value={t.teamId} />
           <div className="eval-sheet mt-3">
           <div className="eval-sheet__row">
             <div className="eval-sheet__label">팀 평가</div>
             <div className="eval-sheet__body">
               <StarRating
-                name={`teamScore_${t.submissionId}`}
+                name={`teamScore_${t.teamId}`}
                 ariaLabel={`${t.label} 별점`}
                 defaultValue={t.my?.star ?? 0}
                 onChange={onEdit}
@@ -224,8 +228,8 @@ function EvaluationCard({
             <div className="eval-sheet__label">팀 코멘트</div>
             <div className="eval-sheet__body">
               <CommentBox
-                id={`team-comment-${t.submissionId}`}
-                name={`teamComment_${t.submissionId}`}
+                id={`team-comment-${t.teamId}`}
+                name={`teamComment_${t.teamId}`}
                 defaultValue={t.my?.comment}
                 placeholder="발표에 대한 코멘트를 남겨주세요 (선택)"
                 onEdit={onEdit}
@@ -239,10 +243,10 @@ function EvaluationCard({
                 <div className="stack-sm">
                   {t.members.map((m) => (
                     <div key={m.userId} className="eval-sheet__member">
-                      <input type="hidden" name={`memberIds_${t.submissionId}`} value={m.userId} />
+                      <input type="hidden" name={`memberIds_${t.teamId}`} value={m.userId} />
                       <span className="eval-sheet__member-name">{m.name}</span>
                       <StarRating
-                        name={`memberScore_${t.submissionId}_${m.userId}`}
+                        name={`memberScore_${t.teamId}_${m.userId}`}
                         ariaLabel={`${t.label} — ${m.name} 별점`}
                         defaultValue={m.my?.star ?? 0}
                         clearable
@@ -324,13 +328,13 @@ export default function EvaluationSessionRoute({ loaderData }: Route.ComponentPr
       </div>
 
       {targets.length === 0 ? (
-        <EmptyState>이 세션에 연결된 발표 제출물이 아직 없어요.</EmptyState>
+        <EmptyState>아직 평가할 팀이 없어요.</EmptyState>
       ) : canEvaluate ? (
         <Form method="post" ref={formRef}>
           <input type="hidden" name="intent" value="submit" />
           <div className="stack-md">
             {targets.map((t, i) => (
-              <EvaluationCard key={t.submissionId} t={t} index={i} onEdit={queueDraftSave} />
+              <EvaluationCard key={t.teamId} t={t} index={i} onEdit={queueDraftSave} />
             ))}
           </div>
 
@@ -358,7 +362,7 @@ export default function EvaluationSessionRoute({ loaderData }: Route.ComponentPr
         <div className="stack-md">
           {targets.map((t, i) => (
             <EvaluationCard
-              key={t.submissionId}
+              key={t.teamId}
               t={t}
               index={i}
               status={

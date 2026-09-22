@@ -231,7 +231,7 @@ export default function AdminEvaluationDetailRoute({ loaderData }: Route.Compone
               </thead>
               <tbody>
                 {targets.map((t) => (
-                  <tr key={t.submissionId}>
+                  <tr key={t.teamId}>
                     <td>{t.label}</td>
                     <td className="small muted">{t.presenter}</td>
                     <td className="num" style={{ textAlign: "center" }}>

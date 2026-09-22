@@ -18,6 +18,8 @@ export const users = sqliteTable(
     birth4: varchar("birth4", 4),
     // student | professor
     role: varchar("role", 16).notNull().default("student"),
+    // active | inactive (inactive = 휴학 등 휴식 — 로그인 차단, 명단 제외, 기록은 유지)
+    status: varchar("status", 16).notNull().default("active"),
     createdAt: timestamp("created_at").$defaultFn(now).notNull(),
   },
   (t) => [
@@ -34,6 +36,7 @@ export const teams = sqliteTable(
     inviteCode: varchar("invite_code", 8).notNull(),
     itemName: varchar("item_name", 200),
     salesChannel: varchar("sales_channel", 200),
+    salesChannelLink: varchar("sales_channel_link", 500), // 온라인 판매 채널 링크
     // none | applied | done
     businessStatus: varchar("business_status", 16).notNull().default("none"),
     // none | applied | done
@@ -146,7 +149,9 @@ export const presentationSessions = sqliteTable("presentation_sessions", {
   createdAt: timestamp("created_at").$defaultFn(now).notNull(),
 });
 
-/** 발표(제출물=팀) 단위 평가 — 별점 0.5~5.0(0.5 단위) + 코멘트(300바이트) */
+/** 발표(팀) 단위 평가 — 별점 0.5~5.0(0.5 단위) + 코멘트(300바이트)
+ *  대상은 제출물이 아니라 "팀" 기준 — 제출물 없는 새 팀도 평가 목록에 포함된다.
+ *  submissionId는 해당 팀의 대표 제출물(최신) 참조이며 없을 수도 있다(null). */
 export const presentationEvaluations = sqliteTable(
   "presentation_evaluations",
   {
@@ -154,9 +159,12 @@ export const presentationEvaluations = sqliteTable(
     sessionId: uuid("session_id")
       .notNull()
       .references(() => presentationSessions.id, { onDelete: "cascade" }),
-    submissionId: uuid("submission_id")
+    teamId: uuid("team_id")
       .notNull()
-      .references(() => submissions.id, { onDelete: "cascade" }),
+      .references(() => teams.id, { onDelete: "cascade" }),
+    submissionId: uuid("submission_id").references(() => submissions.id, {
+      onDelete: "set null",
+    }), // 발표 자료 제출물 (없으면 null)
     evaluatorId: uuid("evaluator_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
@@ -166,9 +174,9 @@ export const presentationEvaluations = sqliteTable(
     updatedAt: timestamp("updated_at").$defaultFn(now).notNull(),
   },
   (t) => [
-    uniqueIndex("presentation_evaluations_session_submission_evaluator_key").on(
+    uniqueIndex("presentation_evaluations_session_team_evaluator_key").on(
       t.sessionId,
-      t.submissionId,
+      t.teamId,
       t.evaluatorId
     ),
   ],
@@ -182,9 +190,9 @@ export const presentationMemberEvaluations = sqliteTable(
     sessionId: uuid("session_id")
       .notNull()
       .references(() => presentationSessions.id, { onDelete: "cascade" }),
-    submissionId: uuid("submission_id")
+    teamId: uuid("team_id")
       .notNull()
-      .references(() => submissions.id, { onDelete: "cascade" }),
+      .references(() => teams.id, { onDelete: "cascade" }),
     evaluatorId: uuid("evaluator_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
@@ -198,7 +206,7 @@ export const presentationMemberEvaluations = sqliteTable(
   (t) => [
     uniqueIndex("presentation_member_evaluations_key").on(
       t.sessionId,
-      t.submissionId,
+      t.teamId,
       t.evaluatorId,
       t.targetUserId
     ),

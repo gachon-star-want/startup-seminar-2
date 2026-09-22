@@ -1,9 +1,11 @@
-import { Link } from "react-router";
+import { Form, Link, data } from "react-router";
 import type { Route } from "./+types/admin._index";
 import { eq } from "drizzle-orm";
 import { attendanceRecords, attendanceSessions, teamMembers, teams, users } from "~/db/schema";
+import { requireAdminAppContext } from "~/lib/context.server";
 import { requireAdmin } from "~/lib/session";
 import { kstYMD } from "~/lib/time";
+import { UserRoster } from "~/modules/users/index.server";
 import { Card, EmptyState, SectionTitle, Stat } from "~/components/ui";
 
 export async function loader({ request, context }: Route.LoaderArgs) {
@@ -27,7 +29,8 @@ export async function loader({ request, context }: Route.LoaderArgs) {
       .limit(1),
   ]);
   const teamByUser = new Map(memberships.map((m) => [m.userId, m.teamName]));
-  const students = allUsers.filter((u) => u.role !== "professor");
+  // 휴학(inactive) 학생은 통계·현황에서 제외 (명단에는 표시해서 복학 가능하게)
+  const activeStudents = allUsers.filter((u) => u.role !== "professor" && u.status !== "inactive");
   let todaySummary: { present: number; late: number; absent: number } | null = null;
   if (todaySession) {
     const records = await db
@@ -38,7 +41,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
     let present = 0;
     let late = 0;
     let absent = 0;
-    for (const u of students) {
+    for (const u of activeStudents) {
       const s = recordByUser.get(u.id);
       if (s === "present") present++;
       else if (s === "late") late++;
@@ -49,7 +52,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   }
 
   return {
-    studentCount: students.length,
+    studentCount: activeStudents.length,
     teamCount: allTeams.length,
     sessionCount: sessions.length,
     todaySummary,
@@ -58,6 +61,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
         id: u.id,
         name: u.name,
         role: u.role,
+        status: u.status,
         teamName: teamByUser.get(u.id) ?? null,
       }))
       .sort((a, b) => {
@@ -65,6 +69,22 @@ export async function loader({ request, context }: Route.LoaderArgs) {
         return a.name.localeCompare(b.name, "ko");
       }),
   };
+}
+
+export async function action({ request, context }: Route.ActionArgs) {
+  const ctx = await requireAdminAppContext(request, context);
+  const form = await request.formData();
+  const intent = String(form.get("intent") ?? "");
+
+  if (intent === "toggleStatus") {
+    const userId = String(form.get("userId") ?? "");
+    const status = String(form.get("status") ?? "") === "inactive" ? "inactive" : "active";
+    const res = await UserRoster.setStatus(ctx, userId, status);
+    if (!res.ok) return data({ error: res.message }, { status: 400 });
+    return { ok: true as const };
+  }
+
+  return data({ error: "알 수 없는 요청이에요." }, { status: 400 });
 }
 
 export default function AdminIndexRoute({ loaderData }: Route.ComponentProps) {
@@ -108,26 +128,54 @@ export default function AdminIndexRoute({ loaderData }: Route.ComponentProps) {
                 <th>이름</th>
                 <th>구분</th>
                 <th>팀</th>
+                <th>상태</th>
               </tr>
             </thead>
             <tbody>
-              {loaderData.users.map((u) => (
-                <tr key={u.id}>
-                  <td data-label="이름" style={{ fontWeight: 700 }}>
-                    {u.name}
-                  </td>
-                  <td data-label="구분" className="muted">
-                    {u.role === "professor" ? (
-                      <span className="badge badge--indigo">교수</span>
-                    ) : (
-                      <span className="faint">학생</span>
-                    )}
-                  </td>
-                  <td data-label="팀" className="muted">
-                    {u.teamName ?? <span className="faint">없음</span>}
-                  </td>
-                </tr>
-              ))}
+              {loaderData.users.map((u) => {
+                const isProfessor = u.role === "professor";
+                const inactive = u.status === "inactive";
+                return (
+                  <tr key={u.id} className={inactive ? "roster-row--inactive" : undefined}>
+                    <td data-label="이름" style={{ fontWeight: 700 }}>
+                      {u.name}
+                    </td>
+                    <td data-label="구분" className="muted">
+                      {isProfessor ? (
+                        <span className="badge badge--indigo">교수</span>
+                      ) : (
+                        <span className="faint">학생</span>
+                      )}
+                    </td>
+                    <td data-label="팀" className="muted">
+                      {u.teamName ?? <span className="faint">없음</span>}
+                    </td>
+                    <td data-label="상태">
+                      {isProfessor ? (
+                        <span className="faint">—</span>
+                      ) : inactive ? (
+                        <span className="badge badge--amber">휴학</span>
+                      ) : (
+                        <span className="badge badge--green">재학</span>
+                      )}
+                      {!isProfessor && (
+                        <Form method="post" className="inline-form">
+                          <input type="hidden" name="intent" value="toggleStatus" />
+                          <input type="hidden" name="userId" value={u.id} />
+                          <input
+                            type="hidden"
+                            name="status"
+                            value={inactive ? "active" : "inactive"}
+                          />
+                          <button type="submit" className="btn btn--ghost btn--sm">
+                            {inactive ? "복학" : "휴학 처리"}
+                          </button>
+                        </Form>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

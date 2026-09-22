@@ -38,6 +38,7 @@ export const TeamRoster = {
       inviteCode: membership.team.inviteCode,
       itemName: membership.team.itemName,
       salesChannel: membership.team.salesChannel,
+      salesChannelLink: membership.team.salesChannelLink,
       businessStatus: membership.team.businessStatus,
       mailOrderStatus: membership.team.mailOrderStatus,
       memo: membership.team.memo,
@@ -171,6 +172,8 @@ export const TeamRoster = {
     const name = input.name.trim();
     const itemName = input.itemName?.trim() || null;
     const salesChannel = input.salesChannel?.trim() || null;
+    // 온라인 채널이 아니면 링크는 저장하지 않는다
+    const salesChannelLink = salesChannel && input.salesChannelLink?.trim() ? input.salesChannelLink.trim() : null;
     const businessStatus = input.businessStatus || "none";
     const mailOrderStatus = input.mailOrderStatus || "none";
     const memo = input.memo?.trim() || null;
@@ -192,6 +195,7 @@ export const TeamRoster = {
         name,
         itemName,
         salesChannel,
+        salesChannelLink,
         businessStatus,
         mailOrderStatus,
         memo,
@@ -298,6 +302,7 @@ export const TeamRoster = {
         name: t.name,
         itemName: t.itemName,
         salesChannel: t.salesChannel,
+        salesChannelLink: t.salesChannelLink,
         businessStatus: t.businessStatus,
         mailOrderStatus: t.mailOrderStatus,
         memo: t.memo,

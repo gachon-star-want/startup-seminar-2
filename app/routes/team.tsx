@@ -1,9 +1,15 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { data, Form, redirect, useActionData } from "react-router";
 import type { Route } from "./+types/team";
 import { TeamRoster } from "~/modules/teams/index.server";
 import { requireAppContext } from "~/lib/context.server";
-import { BUSINESS_STATUS_LABELS, MAIL_ORDER_STATUS_LABELS, SALES_CHANNEL_OPTIONS } from "~/lib/constants";
+import {
+  BUSINESS_STATUS_LABELS,
+  MAIL_ORDER_STATUS_LABELS,
+  SALES_CHANNEL_ETC,
+  SALES_CHANNEL_OPTIONS,
+  matchSalesChannelOption,
+} from "~/lib/constants";
 import { IconCopy } from "~/components/icons";
 import {
   Badge,
@@ -43,6 +49,7 @@ export async function action({ request, context }: Route.ActionArgs) {
     const name = String(form.get("name") ?? "");
     const itemName = String(form.get("itemName") ?? "");
     const salesChannel = String(form.get("salesChannel") ?? "");
+    const salesChannelLink = String(form.get("salesChannelLink") ?? "");
     const businessStatus = String(form.get("businessStatus") ?? "none");
     const mailOrderStatus = String(form.get("mailOrderStatus") ?? "none");
     const memo = String(form.get("memo") ?? "");
@@ -51,6 +58,7 @@ export async function action({ request, context }: Route.ActionArgs) {
       name,
       itemName,
       salesChannel,
+      salesChannelLink,
       businessStatus,
       mailOrderStatus,
       memo,
@@ -66,6 +74,113 @@ export async function action({ request, context }: Route.ActionArgs) {
   }
 
   return data({ error: "알 수 없는 요청이에요." }, { status: 400 });
+}
+
+/**
+ * 판매 채널 자체 드롭다운.
+ * - 옵션 클릭으로 선택 (네이티브 select/datalist의 겹침·OS 팝업 문제 회피)
+ * - "기타"는 텍스트 입력으로 직접 타이핑
+ * - 온라인 채널은 판매 링크 입력칸을 함께 보여준다
+ */
+function ChannelPicker({
+  defaultValue,
+  defaultLink,
+}: {
+  defaultValue: string | null;
+  defaultLink: string | null;
+}) {
+  const matched = matchSalesChannelOption(defaultValue);
+  const [open, setOpen] = useState(false);
+  const [selected, setSelected] = useState<string | null>(
+    () => matched?.label ?? (defaultValue?.trim() ? SALES_CHANNEL_ETC : null)
+  );
+  const [custom, setCustom] = useState(() => (matched ? "" : defaultValue?.trim() ?? ""));
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  // 바깥 클릭으로 드롭다운 닫기
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  const option = selected
+    ? SALES_CHANNEL_OPTIONS.find((o) => o.label === selected) ?? null
+    : null;
+  const isEtc = selected === SALES_CHANNEL_ETC;
+
+  return (
+    <div className="field">
+      <span className="label" id="channel-label">
+        판매 채널 (어디서 판매하나요?)
+      </span>
+      <div className="dd" ref={rootRef}>
+        <button
+          type="button"
+          className={`dd__toggle${open ? " is-open" : ""}`}
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          aria-labelledby="channel-label"
+          onClick={() => setOpen((v) => !v)}
+        >
+          <span className={selected ? "" : "faint"}>
+            {selected === null
+              ? "선택하세요"
+              : isEtc && custom.trim()
+                ? custom.trim()
+                : selected}
+          </span>
+          <span className="dd__chevron" aria-hidden>
+            ▾
+          </span>
+        </button>
+        {open ? (
+          <ul className="dd__menu" role="listbox" aria-labelledby="channel-label">
+            {SALES_CHANNEL_OPTIONS.map((o) => (
+              <li key={o.label}>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={selected === o.label}
+                  className={`dd__item${selected === o.label ? " is-selected" : ""}`}
+                  onClick={() => {
+                    setSelected(o.label);
+                    setOpen(false);
+                  }}
+                >
+                  {o.label}
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+
+      {isEtc ? (
+        <input
+          name="salesChannel"
+          className="input mt-2"
+          placeholder="판매 채널을 직접 입력해 주세요"
+          value={custom}
+          onChange={(e) => setCustom(e.target.value)}
+        />
+      ) : (
+        <input type="hidden" name="salesChannel" value={selected ?? ""} />
+      )}
+      {option?.online ? (
+        <input
+          name="salesChannelLink"
+          type="url"
+          className="input num mt-2"
+          placeholder="판매 링크 (예: https://내쇼핑몰.com)"
+          defaultValue={defaultLink ?? ""}
+        />
+      ) : null}
+    </div>
+  );
 }
 
 function StatusPicker({
@@ -226,21 +341,7 @@ export default function TeamRoute({ loaderData }: Route.ComponentProps) {
               defaultValue={team.itemName ?? ""}
             />
           </Field>
-          <Field label="판매 채널 (어디서 판매하나요?)" htmlFor="t-channel">
-            <input
-              id="t-channel"
-              name="salesChannel"
-              className="input"
-              placeholder="자유롭게 입력하거나 추천에서 선택"
-              list="channel-options"
-              defaultValue={team.salesChannel ?? ""}
-            />
-            <datalist id="channel-options">
-              {SALES_CHANNEL_OPTIONS.map((c) => (
-                <option key={c} value={c} />
-              ))}
-            </datalist>
-          </Field>
+          <ChannelPicker defaultValue={team.salesChannel} defaultLink={team.salesChannelLink} />
 
           <StatusPicker
             name="businessStatus"

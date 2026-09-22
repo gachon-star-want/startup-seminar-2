@@ -34,7 +34,25 @@ export default function BoardRoute({ loaderData }: Route.ComponentProps) {
                 </div>
                 <div className="row">
                   <dt>판매 채널</dt>
-                  <dd>{t.salesChannel?.trim() || <span className="faint">미정</span>}</dd>
+                  <dd>
+                    {t.salesChannel?.trim() ? (
+                      t.salesChannelLink?.trim() ? (
+                        <a
+                          href={t.salesChannelLink.trim()}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="link-url"
+                          title={t.salesChannelLink.trim()}
+                        >
+                          {t.salesChannel.trim()} 🔗
+                        </a>
+                      ) : (
+                        t.salesChannel.trim()
+                      )
+                    ) : (
+                      <span className="faint">미정</span>
+                    )}
+                  </dd>
                 </div>
                 <div className="row">
                   <dt>사업자등록</dt>

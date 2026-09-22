@@ -30,6 +30,11 @@ export async function action({ request, context }: Route.ActionArgs) {
     );
   }
 
+  // 휴학 등 비활성 상태 — 관리자가 복학 처리하면 다시 로그인할 수 있다
+  if (existing.status === "inactive") {
+    return data({ error: "휴학 상태라 로그인할 수 없어요. 관리자에게 문의해 주세요." }, { status: 403 });
+  }
+
   const token = await makeSessionToken(existing.id, sessionSecret(env));
   return redirect("/", { headers: { "Set-Cookie": cookieHeader(SESSION_COOKIE, token) } });
 }

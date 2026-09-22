@@ -10,6 +10,7 @@ export type TeamOverview = {
   inviteCode: string;
   itemName: string | null;
   salesChannel: string | null;
+  salesChannelLink: string | null;
   businessStatus: string;
   mailOrderStatus: string;
   memo: string | null;
@@ -24,6 +25,7 @@ export type LeaderboardTeam = {
   name: string;
   itemName: string | null;
   salesChannel: string | null;
+  salesChannelLink: string | null;
   businessStatus: string;
   mailOrderStatus: string;
   memo: string | null;
@@ -36,6 +38,7 @@ export type UpdateTeamInput = {
   name: string;
   itemName?: string | null;
   salesChannel?: string | null;
+  salesChannelLink?: string | null;
   businessStatus: string;
   mailOrderStatus: string;
   memo?: string | null;

@@ -63,10 +63,10 @@ export const EvaluationHub = {
 
   /**
    * 학생 발표 평가 목록 (세션별 진행상황 집계)
-   * targetCount는 모든 팀(제출물), myCount는 내가 팀 단위 평가를 끝낸 수.
+   * targetCount는 전체 팀 수(제출물 없는 팀 포함), myCount는 내가 팀 단위 평가를 끝낸 수.
    */
   async listSessionsForStudent(ctx: AppContext): Promise<{ sessions: StudentSessionListItem[] }> {
-    const [rows, myEvalCounts] = await Promise.all([
+    const [rows, myEvalCounts, [teamCount]] = await Promise.all([
       ctx.db
         .select({
           session: presentationSessions,
@@ -80,20 +80,9 @@ export const EvaluationHub = {
         .from(presentationEvaluations)
         .where(eq(presentationEvaluations.evaluatorId, ctx.user.id))
         .groupBy(presentationEvaluations.sessionId),
+      ctx.db.select({ count: sql<number>`count(*)` }).from(teams),
     ]);
 
-    const assignmentIds = [
-      ...new Set(rows.map((r) => r.session.assignmentId).filter((id): id is string => Boolean(id))),
-    ];
-    const targetCounts = assignmentIds.length
-      ? await ctx.db
-          .select({ assignmentId: submissions.assignmentId, count: sql<number>`count(*)` })
-          .from(submissions)
-          .where(inArray(submissions.assignmentId, assignmentIds))
-          .groupBy(submissions.assignmentId)
-      : [];
-
-    const targetMap = new Map(targetCounts.map((t) => [t.assignmentId, t.count]));
     const myMap = new Map(myEvalCounts.map((m) => [m.sessionId, m.count]));
 
     return {
@@ -107,7 +96,7 @@ export const EvaluationHub = {
         opensAt: r.session.opensAt.toISOString(),
         closesAt: r.session.closesAt.toISOString(),
         phase: phaseOf(r.session.opensAt, r.session.closesAt, ctx.now),
-        targetCount: r.session.assignmentId ? (targetMap.get(r.session.assignmentId) ?? 0) : 0,
+        targetCount: teamCount?.count ?? 0,
         myCount: myMap.get(r.session.id) ?? 0,
       })),
     };
@@ -126,6 +115,7 @@ export const EvaluationHub = {
 
   /**
    * 학생 세션 평가 화면: 모든 팀 발표 목록 + 팀원 명단 + 내 이전 평가.
+   * 평가 대상은 제출물이 아니라 "모든 팀" — 발표 자료를 아직 안 올린 새 팀도 포함된다.
    * 우리 팀도 평가 대상에 포함된다.
    */
   async getSessionForStudent(ctx: AppContext, sessionId: string): Promise<StudentSessionView> {
@@ -138,83 +128,82 @@ export const EvaluationHub = {
 
     const phase = phaseOf(session.opensAt, session.closesAt, ctx.now);
 
-    const submissionRows = session.assignmentId
-      ? await ctx.db
-          .select({ submission: submissions, userName: users.name, teamName: teams.name })
-          .from(submissions)
-          .innerJoin(users, eq(submissions.userId, users.id))
-          .leftJoin(teams, eq(submissions.teamId, teams.id))
-          .where(eq(submissions.assignmentId, session.assignmentId))
-      : [];
+    const [teamRows, myEvals, myMemberEvals] = await Promise.all([
+      ctx.db.select({ id: teams.id, name: teams.name }).from(teams),
+      ctx.db
+        .select()
+        .from(presentationEvaluations)
+        .where(
+          and(
+            eq(presentationEvaluations.sessionId, sessionId),
+            eq(presentationEvaluations.evaluatorId, ctx.user.id)
+          )
+        ),
+      ctx.db
+        .select()
+        .from(presentationMemberEvaluations)
+        .where(
+          and(
+            eq(presentationMemberEvaluations.sessionId, sessionId),
+            eq(presentationMemberEvaluations.evaluatorId, ctx.user.id)
+          )
+        ),
+    ]);
 
-    const targets = submissionRows
-      .map((r) => ({
-        submissionId: r.submission.id,
-        label: r.teamName ? `${r.teamName} 팀` : r.userName,
-        presenter: r.userName,
-        content: r.submission.content,
-        link: r.submission.link,
-        teamId: r.submission.teamId,
-        files: [] as { id: string; filename: string; size: number }[],
-        members: [] as { userId: string; name: string; my: { star: number } | null }[],
-        my: null as { star: number; comment: string | null; updatedAt: string } | null,
-      }))
-      .sort((a, b) => a.label.localeCompare(b.label, "ko"));
+    const teamIds = teamRows.map((t) => t.id);
 
-    const targetIds = targets.map((t) => t.submissionId);
-
-    // 파일 + 팀원 명단 + 내 평가를 병렬로 일괄 조회
-    const [files, memberRows, myEvals, myMemberEvals] = await Promise.all([
-      targetIds.length
-        ? ctx.db.select().from(submissionFiles).where(inArray(submissionFiles.submissionId, targetIds))
-        : Promise.resolve([]),
-      (async () => {
-        const teamIds = [...new Set(targets.map((t) => t.teamId).filter((id): id is string => Boolean(id)))];
-        if (teamIds.length === 0) return [] as { teamId: string; userId: string; name: string }[];
-        return ctx.db
-          .select({ teamId: teamMembers.teamId, userId: teamMembers.userId, name: users.name })
-          .from(teamMembers)
-          .innerJoin(users, eq(teamMembers.userId, users.id))
-          .where(inArray(teamMembers.teamId, teamIds));
-      })(),
-      targetIds.length
+    // 팀원 명단 + 팀별 대표 제출물(최신 1건)을 병렬로 일괄 조회
+    const [memberRows, submissionRows] = await Promise.all([
+      teamIds.length
         ? ctx.db
-            .select()
-            .from(presentationEvaluations)
-            .where(
-              and(
-                eq(presentationEvaluations.sessionId, sessionId),
-                eq(presentationEvaluations.evaluatorId, ctx.user.id)
-              )
-            )
+            .select({
+              teamId: teamMembers.teamId,
+              userId: teamMembers.userId,
+              name: users.name,
+              role: teamMembers.role,
+            })
+            .from(teamMembers)
+            .innerJoin(users, eq(teamMembers.userId, users.id))
+            .where(inArray(teamMembers.teamId, teamIds))
         : Promise.resolve([]),
-      targetIds.length
+      session.assignmentId
         ? ctx.db
-            .select()
-            .from(presentationMemberEvaluations)
-            .where(
-              and(
-                eq(presentationMemberEvaluations.sessionId, sessionId),
-                eq(presentationMemberEvaluations.evaluatorId, ctx.user.id)
-              )
-            )
+            .select({ submission: submissions })
+            .from(submissions)
+            .where(eq(submissions.assignmentId, session.assignmentId))
+            .orderBy(desc(submissions.createdAt))
         : Promise.resolve([]),
     ]);
 
-    const myEvalMap = new Map(myEvals.map((e) => [e.submissionId, e]));
-    const myMemberMap = new Map(
-      myMemberEvals.map((e) => [`${e.submissionId}:${e.targetUserId}`, e])
-    );
+    // 팀별 대표 제출물 = 가장 최근 제출물 (orderBy desc라 먼저 온 것이 최신)
+    const latestByTeam = new Map<string, typeof submissions.$inferSelect>();
+    for (const r of submissionRows) {
+      if (r.submission.teamId && !latestByTeam.has(r.submission.teamId)) {
+        latestByTeam.set(r.submission.teamId, r.submission);
+      }
+    }
+    const submissionIds = [...latestByTeam.values()].map((s) => s.id);
 
-    for (const t of targets) {
-      t.files = files
-        .filter((f) => f.submissionId === t.submissionId)
-        .map((f) => ({ id: f.id, filename: f.filename, size: f.size }));
-      if (t.teamId) {
-        t.members = memberRows
-          .filter((m) => m.teamId === t.teamId)
+    const files = submissionIds.length
+      ? await ctx.db.select().from(submissionFiles).where(inArray(submissionFiles.submissionId, submissionIds))
+      : [];
+
+    const myEvalMap = new Map(myEvals.map((e) => [e.teamId, e]));
+    const myMemberMap = new Map(myMemberEvals.map((e) => [`${e.teamId}:${e.targetUserId}`, e]));
+    const membersByTeam = new Map<string, typeof memberRows>();
+    for (const m of memberRows) {
+      const list = membersByTeam.get(m.teamId) ?? [];
+      list.push(m);
+      membersByTeam.set(m.teamId, list);
+    }
+
+    const targets = teamRows
+      .map((team) => {
+        const sub = latestByTeam.get(team.id) ?? null;
+        const roster = membersByTeam.get(team.id) ?? [];
+        const members = roster
           .map((m) => {
-            const prev = myMemberMap.get(`${t.submissionId}:${m.userId}`);
+            const prev = myMemberMap.get(`${team.id}:${m.userId}`);
             return {
               userId: m.userId,
               name: m.name,
@@ -222,12 +211,30 @@ export const EvaluationHub = {
             };
           })
           .sort((a, b) => a.name.localeCompare(b.name, "ko"));
-      }
-      const prev = myEvalMap.get(t.submissionId);
-      t.my = prev
-        ? { star: prev.starScore, comment: prev.comment, updatedAt: prev.updatedAt.toISOString() }
-        : null;
-    }
+        // 발표자 = 팀장 (없으면 첫 팀원)
+        const leader = roster.find((m) => m.role === "leader");
+        const presenter = leader?.name ?? members[0]?.name ?? "—";
+        const prev = myEvalMap.get(team.id);
+
+        return {
+          teamId: team.id,
+          submissionId: sub?.id ?? null,
+          label: `${team.name} 팀`,
+          presenter,
+          content: sub?.content ?? null,
+          link: sub?.link ?? null,
+          files: sub
+            ? files
+                .filter((f) => f.submissionId === sub.id)
+                .map((f) => ({ id: f.id, filename: f.filename, size: f.size }))
+            : [],
+          members,
+          my: prev
+            ? { star: prev.starScore, comment: prev.comment, updatedAt: prev.updatedAt.toISOString() }
+            : null,
+        };
+      })
+      .sort((a, b) => a.label.localeCompare(b.label, "ko"));
 
     return {
       session: {
@@ -245,7 +252,8 @@ export const EvaluationHub = {
 
   /**
    * 학생 평가 저장 — 페이지의 모든 팀을 한 번에 저장한다.
-   * 팀별 필드는 teamScore_{제출물} / teamComment_{제출물} / memberIds_{제출물} / memberScore_{제출물}_{팀원}.
+   * 팀별 필드는 teamScore_{팀} / teamComment_{팀} / memberIds_{팀} / memberScore_{팀}_{팀원}.
+   * 대상은 제출물이 아니라 팀 기준 — 제출물은 팀의 대표 제출물(최신 1건)로 참조만 한다.
    * intent=draft(임시 저장)는 별점을 고른 팀만 조용히 저장하고 부분 입력은 무시하며,
    * intent=submit(제출)은 입력만 해놓고 별점이 없는 팀이 있으면 어느 팀인지 알려주고 거절한다.
    */
@@ -267,35 +275,36 @@ export const EvaluationHub = {
 
     const draft = String(form.get("intent") ?? "submit") === "draft";
 
-    const submissionIds = [...new Set(form.getAll("submissionId").map(String))].filter(Boolean);
-    if (submissionIds.length === 0) {
+    const teamIdList = [...new Set(form.getAll("teamId").map(String))].filter(Boolean);
+    if (teamIdList.length === 0) {
       return { ok: false, message: "평가 대상 발표가 없어요." };
     }
 
-    // 이 세션의 평가 대상 제출물만 통과 — 대상 밖의 submissionId는 조용히 무시
-    const targetRows = session.assignmentId
-      ? await ctx.db
-          .select({ id: submissions.id, teamId: submissions.teamId, teamName: teams.name, userName: users.name })
-          .from(submissions)
-          .innerJoin(users, eq(submissions.userId, users.id))
-          .leftJoin(teams, eq(submissions.teamId, teams.id))
-          .where(eq(submissions.assignmentId, session.assignmentId))
-      : [];
-    const targetMap = new Map(
-      targetRows.map((r) => [
-        r.id,
-        { teamId: r.teamId, label: r.teamName ? `${r.teamName} 팀` : r.userName },
-      ])
-    );
+    // 평가 대상 팀만 통과 — 대상 밖의 teamId는 조용히 무시
+    const targetRows = await ctx.db
+      .select({ id: teams.id, name: teams.name })
+      .from(teams)
+      .where(inArray(teams.id, teamIdList));
+    const targetMap = new Map(targetRows.map((r) => [r.id, `${r.name} 팀`]));
+
+    // 팀별 대표 제출물(최신 1건) — 평가 기록이 어떤 발표 자료를 가리키는지 남긴다
+    const latestByTeam = new Map<string, string>();
+    if (session.assignmentId) {
+      const subRows = await ctx.db
+        .select({ id: submissions.id, teamId: submissions.teamId })
+        .from(submissions)
+        .where(eq(submissions.assignmentId, session.assignmentId))
+        .orderBy(desc(submissions.createdAt));
+      for (const s of subRows) {
+        if (s.teamId && !latestByTeam.has(s.teamId)) latestByTeam.set(s.teamId, s.id);
+      }
+    }
 
     // 팀원 명단 일괄 조회 — 그 팀 소속이 아닌 유저에 대한 평가는 무시
-    const teamIds = [...new Set(targetRows.map((r) => r.teamId).filter((id): id is string => Boolean(id)))];
-    const rosterRows = teamIds.length
-      ? await ctx.db
-          .select({ teamId: teamMembers.teamId, userId: teamMembers.userId })
-          .from(teamMembers)
-          .where(inArray(teamMembers.teamId, teamIds))
-      : [];
+    const rosterRows = await ctx.db
+      .select({ teamId: teamMembers.teamId, userId: teamMembers.userId })
+      .from(teamMembers)
+      .where(inArray(teamMembers.teamId, teamIdList));
     const rosterByTeam = new Map<string, Set<string>>();
     for (const r of rosterRows) {
       const set = rosterByTeam.get(r.teamId) ?? new Set<string>();
@@ -304,17 +313,18 @@ export const EvaluationHub = {
     }
 
     const plans: {
-      submissionId: string;
+      teamId: string;
+      submissionId: string | null;
       star: number;
       comment: string | null;
       members: { userId: string; star: number }[];
     }[] = [];
 
-    for (const submissionId of submissionIds) {
-      const target = targetMap.get(submissionId);
-      if (!target) continue;
+    for (const teamId of teamIdList) {
+      const label = targetMap.get(teamId);
+      if (!label) continue;
 
-      let comment = validateComment(String(form.get(`teamComment_${submissionId}`) ?? ""));
+      let comment = validateComment(String(form.get(`teamComment_${teamId}`) ?? ""));
       if (!comment.ok) {
         if (draft) {
           comment = { ok: true, value: null }; // 임시 저장 중 초과 코멘트는 일단 뺀다 (제출 때 거절)
@@ -324,10 +334,10 @@ export const EvaluationHub = {
       }
 
       const members: { userId: string; star: number }[] = [];
-      const roster = target.teamId ? rosterByTeam.get(target.teamId) : undefined;
-      for (const memberId of form.getAll(`memberIds_${submissionId}`).map(String)) {
+      const roster = rosterByTeam.get(teamId);
+      for (const memberId of form.getAll(`memberIds_${teamId}`).map(String)) {
         if (!roster?.has(memberId)) continue; // 그 팀 소속이 아닌 유저는 무시
-        const memberField = `memberScore_${submissionId}_${memberId}`;
+        const memberField = `memberScore_${teamId}_${memberId}`;
         if (!String(form.get(memberField) ?? "").trim()) continue; // 별점 미선택 멤버는 건너뜀
         const star = EvaluationHub.parseStar(form, memberField);
         if (!star.ok) {
@@ -337,21 +347,21 @@ export const EvaluationHub = {
         members.push({ userId: memberId, star: star.star });
       }
 
-      const starRaw = String(form.get(`teamScore_${submissionId}`) ?? "").trim();
+      const starRaw = String(form.get(`teamScore_${teamId}`) ?? "").trim();
       if (!starRaw) {
         if (draft) continue; // 별점 전의 부분 입력(코멘트만 등)은 임시 저장에서 제외
         if (comment.value || members.length > 0) {
-          return { ok: false, message: `${target.label}의 별점을 골라 주세요.` };
+          return { ok: false, message: `${label}의 별점을 골라 주세요.` };
         }
         continue; // 아무것도 입력하지 않은 팀은 저장하지 않음
       }
-      const teamStar = EvaluationHub.parseStar(form, `teamScore_${submissionId}`);
+      const teamStar = EvaluationHub.parseStar(form, `teamScore_${teamId}`);
       if (!teamStar.ok) {
         if (draft) continue;
         return teamStar;
       }
 
-      plans.push({ submissionId, star: teamStar.star, comment: comment.value, members });
+      plans.push({ teamId, submissionId: latestByTeam.get(teamId) ?? null, star: teamStar.star, comment: comment.value, members });
     }
 
     if (plans.length === 0) {
@@ -367,7 +377,7 @@ export const EvaluationHub = {
         .where(
           and(
             eq(presentationEvaluations.sessionId, sessionId),
-            eq(presentationEvaluations.submissionId, p.submissionId),
+            eq(presentationEvaluations.teamId, p.teamId),
             eq(presentationEvaluations.evaluatorId, ctx.user.id)
           )
         )
@@ -376,11 +386,12 @@ export const EvaluationHub = {
       if (existing) {
         await ctx.db
           .update(presentationEvaluations)
-          .set({ starScore: p.star, comment: p.comment, updatedAt: ctx.now })
+          .set({ submissionId: p.submissionId, starScore: p.star, comment: p.comment, updatedAt: ctx.now })
           .where(eq(presentationEvaluations.id, existing.id));
       } else {
         await ctx.db.insert(presentationEvaluations).values({
           sessionId,
+          teamId: p.teamId,
           submissionId: p.submissionId,
           evaluatorId: ctx.user.id,
           starScore: p.star,
@@ -396,7 +407,7 @@ export const EvaluationHub = {
           .where(
             and(
               eq(presentationMemberEvaluations.sessionId, sessionId),
-              eq(presentationMemberEvaluations.submissionId, p.submissionId),
+              eq(presentationMemberEvaluations.teamId, p.teamId),
               eq(presentationMemberEvaluations.evaluatorId, ctx.user.id),
               eq(presentationMemberEvaluations.targetUserId, m.userId)
             )
@@ -411,7 +422,7 @@ export const EvaluationHub = {
         } else {
           await ctx.db.insert(presentationMemberEvaluations).values({
             sessionId,
-            submissionId: p.submissionId,
+            teamId: p.teamId,
             evaluatorId: ctx.user.id,
             targetUserId: m.userId,
             starScore: m.star,
@@ -431,7 +442,7 @@ export const EvaluationHub = {
    * 관리자 세션 목록 + 집계
    */
   async listSessionsForAdmin(ctx: AppContext): Promise<{ sessions: AdminSessionListItem[] }> {
-    const [rows, evalStats] = await Promise.all([
+    const [rows, evalStats, [teamCount]] = await Promise.all([
       ctx.db
         .select({ session: presentationSessions, assignmentTitle: assignments.title })
         .from(presentationSessions)
@@ -445,20 +456,9 @@ export const EvaluationHub = {
         })
         .from(presentationEvaluations)
         .groupBy(presentationEvaluations.sessionId),
+      ctx.db.select({ count: sql<number>`count(*)` }).from(teams),
     ]);
 
-    const assignmentIds = [
-      ...new Set(rows.map((r) => r.session.assignmentId).filter((id): id is string => Boolean(id))),
-    ];
-    const targetCounts = assignmentIds.length
-      ? await ctx.db
-          .select({ assignmentId: submissions.assignmentId, count: sql<number>`count(*)` })
-          .from(submissions)
-          .where(inArray(submissions.assignmentId, assignmentIds))
-          .groupBy(submissions.assignmentId)
-      : [];
-
-    const targetMap = new Map(targetCounts.map((t) => [t.assignmentId, t.count]));
     const evalMap = new Map(evalStats.map((e) => [e.sessionId, e]));
 
     return {
@@ -474,7 +474,7 @@ export const EvaluationHub = {
           opensAt: r.session.opensAt.toISOString(),
           closesAt: r.session.closesAt.toISOString(),
           phase: phaseOf(r.session.opensAt, r.session.closesAt, ctx.now),
-          targetCount: r.session.assignmentId ? (targetMap.get(r.session.assignmentId) ?? 0) : 0,
+          targetCount: teamCount?.count ?? 0,
           evaluationCount: stats?.count ?? 0,
           evaluatorCount: stats?.evaluators ?? 0,
         };
@@ -558,14 +558,18 @@ export const EvaluationHub = {
       .limit(1);
     if (!session) throw new Response("발표 세션을 찾을 수 없어요", { status: 404 });
 
-    const submissionRows = session.session.assignmentId
-      ? await ctx.db
-          .select({ submission: submissions, userName: users.name, teamName: teams.name })
-          .from(submissions)
-          .innerJoin(users, eq(submissions.userId, users.id))
-          .leftJoin(teams, eq(submissions.teamId, teams.id))
-          .where(eq(submissions.assignmentId, session.session.assignmentId))
-      : [];
+    const teamRows = await ctx.db.select({ id: teams.id, name: teams.name }).from(teams);
+    const membersByTeam = new Map<string, string[]>(); // teamId -> [팀장 이름, ...]
+    const memberRoster = await ctx.db
+      .select({ teamId: teamMembers.teamId, name: users.name, role: teamMembers.role })
+      .from(teamMembers)
+      .innerJoin(users, eq(teamMembers.userId, users.id));
+    for (const m of memberRoster) {
+      const list = membersByTeam.get(m.teamId) ?? [];
+      if (m.role === "leader") list.unshift(m.name);
+      else list.push(m.name);
+      membersByTeam.set(m.teamId, list);
+    }
 
     const [teamEvalRows, memberEvalRows] = await Promise.all([
       ctx.db
@@ -580,24 +584,22 @@ export const EvaluationHub = {
         .where(eq(presentationMemberEvaluations.sessionId, sessionId)),
     ]);
 
-    const labelOf = (r: { teamName: string | null; userName: string }) =>
-      r.teamName ? `${r.teamName} 팀` : r.userName;
-
-    const targets = submissionRows
-      .map((r) => {
-        const evals = teamEvalRows.filter((e) => e.evaluation.submissionId === r.submission.id);
+    const targets = teamRows
+      .map((team) => {
+        const evals = teamEvalRows.filter((e) => e.evaluation.teamId === team.id);
         const n = evals.length;
+        const roster = membersByTeam.get(team.id) ?? [];
         return {
-          submissionId: r.submission.id,
-          label: labelOf(r),
-          presenter: r.userName,
+          teamId: team.id,
+          label: `${team.name} 팀`,
+          presenter: roster[0] ?? "—",
           evaluatorCount: n,
           avgStar: n > 0 ? Math.round((evals.reduce((s, e) => s + e.evaluation.starScore, 0) / n) * 10) / 10 : 0,
         };
       })
       .sort((a, b) => a.label.localeCompare(b.label, "ko"));
 
-    const targetById = new Map(targets.map((t) => [t.submissionId, t]));
+    const targetByTeamId = new Map(targets.map((t) => [t.teamId, t]));
 
     // 팀원별 집계 — targetUserId의 이름은 users에서 보장되지만 표시용으로 한 번 조회
     const memberUserIds = [...new Set(memberEvalRows.map((e) => e.evaluation.targetUserId))];
@@ -609,11 +611,11 @@ export const EvaluationHub = {
       : [];
     const memberNameMap = new Map(memberNames.map((m) => [m.id, m.name]));
 
-    const memberStats = [...new Set(memberEvalRows.map((e) => e.evaluation.submissionId))]
-      .map((submissionId) => {
-        const target = targetById.get(submissionId);
+    const memberStats = [...new Set(memberEvalRows.map((e) => e.evaluation.teamId))]
+      .map((teamId) => {
+        const target = targetByTeamId.get(teamId);
         const byUser = new Map<string, { stars: number[]; name: string }>();
-        for (const e of memberEvalRows.filter((x) => x.evaluation.submissionId === submissionId)) {
+        for (const e of memberEvalRows.filter((x) => x.evaluation.teamId === teamId)) {
           const entry = byUser.get(e.evaluation.targetUserId) ?? { stars: [], name: memberNameMap.get(e.evaluation.targetUserId) ?? "알 수 없음" };
           entry.stars.push(e.evaluation.starScore);
           byUser.set(e.evaluation.targetUserId, entry);
@@ -639,8 +641,8 @@ export const EvaluationHub = {
     const rows: EvaluationResultRow[] = [
       ...teamEvalRows.map((e) => ({
         kind: "team" as const,
-        presentation: targetById.get(e.evaluation.submissionId)?.label ?? "알 수 없음",
-        target: targetById.get(e.evaluation.submissionId)?.label ?? "알 수 없음",
+        presentation: targetByTeamId.get(e.evaluation.teamId)?.label ?? "알 수 없음",
+        target: targetByTeamId.get(e.evaluation.teamId)?.label ?? "알 수 없음",
         evaluator: e.evaluatorName,
         star: e.evaluation.starScore,
         comment: e.evaluation.comment,
@@ -648,7 +650,7 @@ export const EvaluationHub = {
       })),
       ...memberEvalRows.map((e) => ({
         kind: "member" as const,
-        presentation: targetById.get(e.evaluation.submissionId)?.label ?? "알 수 없음",
+        presentation: targetByTeamId.get(e.evaluation.teamId)?.label ?? "알 수 없음",
         target: memberNameMap.get(e.evaluation.targetUserId) ?? "알 수 없음",
         evaluator: e.evaluatorName,
         star: e.evaluation.starScore,

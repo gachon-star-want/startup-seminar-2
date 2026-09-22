@@ -16,7 +16,7 @@ export type StudentSessionListItem = {
   opensAt: string;
   closesAt: string;
   phase: EvaluationPhase;
-  /** 평가 대상 발표(제출물) 수 — 모든 팀 포함 */
+  /** 평가 대상 팀 수 — 제출물 없는 팀 포함, 전체 팀 대상 */
   targetCount: number;
   /** 내가 팀 단위 평가를 끝낸 수 */
   myCount: number;
@@ -30,13 +30,15 @@ export type MemberEvalTarget = {
 };
 
 export type EvaluationTargetItem = {
-  submissionId: string;
+  teamId: string;
+  /** 팀의 대표 제출물(최신 1건) — 발표 자료를 안 올린 팀은 null */
+  submissionId: string | null;
   label: string;
   presenter: string;
   content: string | null;
   link: string | null;
   files: { id: string; filename: string; size: number }[];
-  /** 팀 과제일 때만 팀원 목록 (개인 과제는 []) */
+  /** 팀원 목록 — 개별 평가 대상 */
   members: MemberEvalTarget[];
   /** 내가 이전에 남긴 팀 단위 평가 */
   my: (EvaluationScores & { updatedAt: string }) | null;
@@ -71,7 +73,7 @@ export type AdminSessionListItem = {
 };
 
 export type TargetStatItem = {
-  submissionId: string;
+  teamId: string;
   label: string;
   presenter: string;
   evaluatorCount: number;
