@@ -1,11 +1,13 @@
+import { useState } from "react";
 import { Link, useActionData, useNavigation } from "react-router";
 import type { Route } from "./+types/evaluations.$id";
 import { Form } from "react-router";
 import { requireAppContext } from "~/lib/context.server";
 import { EvaluationHub } from "~/modules/evaluations/index.server";
+import { MAX_EVAL_COMMENT_BYTES } from "~/lib/constants";
 import { fmtKST, ymdLabel } from "~/lib/time";
 import { IconArrowLeft } from "~/components/icons";
-import { Badge, Card, EmptyState, ErrorText, Field, formatBytes } from "~/components/ui";
+import { Badge, Card, EmptyState, ErrorText, formatBytes } from "~/components/ui";
 
 export async function loader({ request, context, params }: Route.LoaderArgs) {
   const ctx = await requireAppContext(request, context);
@@ -22,22 +24,20 @@ export async function action({ request, context, params }: Route.ActionArgs) {
   return { error: undefined as string | undefined, message: result.message };
 }
 
-const SCORE_ITEMS = [
-  { key: "idea", label: "아이디어·시장성" },
-  { key: "feasibility", label: "실현가능성" },
-  { key: "delivery", label: "발표력·완성도" },
-] as const;
+const encoder = new TextEncoder();
+const byteLen = (s: string) => encoder.encode(s).length;
 
-function ScorePicker({
-  fieldKey,
+/** 별 5개 라디오 (required로 필수/선택 제어) */
+function StarPicker({
+  name,
   label,
   defaultValue,
-  disabled,
+  required,
 }: {
-  fieldKey: string;
+  name: string;
   label: string;
   defaultValue?: number;
-  disabled: boolean;
+  required?: boolean;
 }) {
   return (
     <div className="score-row">
@@ -47,11 +47,10 @@ function ScorePicker({
           <label key={n} className="score-row__opt" title={`${n}점`}>
             <input
               type="radio"
-              name={`${fieldKey}Score`}
+              name={name}
               value={n}
               defaultChecked={defaultValue === n}
-              disabled={disabled}
-              required
+              required={required}
             />
             <span aria-hidden>★</span>
             <span className="score-row__num">{n}</span>
@@ -62,13 +61,48 @@ function ScorePicker({
   );
 }
 
+/** 300바이트 카운터가 붙은 코멘트 박스 */
+function CommentBox({
+  id,
+  name,
+  defaultValue,
+  placeholder,
+  compact,
+}: {
+  id: string;
+  name: string;
+  defaultValue?: string | null;
+  placeholder: string;
+  compact?: boolean;
+}) {
+  const [bytes, setBytes] = useState(() => byteLen(defaultValue ?? ""));
+  const over = bytes > MAX_EVAL_COMMENT_BYTES;
+  return (
+    <div className="field" style={compact ? { marginTop: "0.375rem" } : undefined}>
+      <textarea
+        id={id}
+        name={name}
+        rows={compact ? 1 : 2}
+        className="input"
+        placeholder={placeholder}
+        defaultValue={defaultValue ?? ""}
+        onInput={(e) => setBytes(byteLen((e.target as HTMLTextAreaElement).value))}
+        style={over ? { borderColor: "var(--danger)" } : undefined}
+      />
+      <p className={`hint num${over ? " text-danger" : ""}`} style={compact ? { marginTop: "0.125rem" } : undefined}>
+        {bytes}/{MAX_EVAL_COMMENT_BYTES}바이트{over ? " — 초과했어요" : ""}
+      </p>
+    </div>
+  );
+}
+
 export default function EvaluationSessionRoute({ loaderData }: Route.ComponentProps) {
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
   const s = loaderData.session;
-  const myEvals = loaderData.myEvaluations;
-  const evaluableTargets = loaderData.targets.filter((t) => !t.mine);
-  const doneCount = evaluableTargets.filter((t) => myEvals[t.submissionId]).length;
+  const targets = loaderData.targets;
+  const doneCount = targets.filter((t) => t.my).length;
+  const submitting = navigation.state === "submitting";
 
   return (
     <div className="stack-xl">
@@ -88,8 +122,8 @@ export default function EvaluationSessionRoute({ loaderData }: Route.ComponentPr
           {fmtKST(new Date(s.opensAt), { month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" })}
           {" ~ "}
           {fmtKST(new Date(s.closesAt), { month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" })}
-          {" · 내 평가 "}
-          {doneCount}/{evaluableTargets.length}
+          {" · 팀 평가 "}
+          {doneCount}/{targets.length}
         </p>
         {s.description ? (
           <p className="card small muted help-text notice-body mt-3">{s.description}</p>
@@ -105,14 +139,12 @@ export default function EvaluationSessionRoute({ loaderData }: Route.ComponentPr
         </div>
       ) : null}
 
-      {loaderData.targets.length === 0 ? (
+      {targets.length === 0 ? (
         <EmptyState>이 세션에 연결된 발표 제출물이 아직 없어요.</EmptyState>
       ) : (
         <div className="stack-md">
-          {loaderData.targets.map((t, i) => {
-            const mine = t.mine;
-            const myEval = myEvals[t.submissionId];
-            const canEvaluate = s.phase === "open" && !mine;
+          {targets.map((t, i) => {
+            const canEvaluate = s.phase === "open";
             return (
               <Card key={t.submissionId}>
                 <div className="cluster cluster--between">
@@ -120,8 +152,7 @@ export default function EvaluationSessionRoute({ loaderData }: Route.ComponentPr
                     <strong className="card__title">
                       {i + 1}. {t.label}
                     </strong>
-                    {mine ? <Badge tone="indigo">우리 발표</Badge> : null}
-                    {myEval ? <Badge tone="green">평가 완료 ★{myEval.idea + myEval.feasibility + myEval.delivery}</Badge> : null}
+                    {t.my ? <Badge tone="green">평가 완료 ★{t.my.star}</Badge> : null}
                   </div>
                   <span className="small faint">발표자: {t.presenter}</span>
                 </div>
@@ -164,50 +195,67 @@ export default function EvaluationSessionRoute({ loaderData }: Route.ComponentPr
                   </ul>
                 ) : null}
 
-                {mine ? (
-                  <p className="small faint mt-3">우리 발표는 평가 대상에서 제외돼요.</p>
-                ) : canEvaluate ? (
+                {canEvaluate ? (
                   <Form method="post" className="mt-3">
                     <input type="hidden" name="submissionId" value={t.submissionId} />
-                    <div className="stack-sm">
-                      {SCORE_ITEMS.map((item) => (
-                        <ScorePicker
-                          key={item.key}
-                          fieldKey={item.key}
-                          label={item.label}
-                          defaultValue={myEval?.[item.key]}
-                          disabled={navigation.state === "submitting"}
-                        />
-                      ))}
-                    </div>
-                    <Field label="코멘트 (선택)" htmlFor={`comment-${t.submissionId}`}>
-                      <textarea
-                        id={`comment-${t.submissionId}`}
-                        name="comment"
-                        rows={2}
-                        className="input"
-                        placeholder="좋았던 점, 아쉬운 점을 한 줄 남겨주세요."
-                        defaultValue={myEval?.comment ?? ""}
-                      />
-                    </Field>
-                    <div className="cluster mt-3">
-                      <button
-                        type="submit"
-                        className="btn btn--primary btn--sm"
-                        disabled={navigation.state === "submitting"}
-                      >
-                        {myEval ? "평가 수정하기" : "평가 제출하기"}
+
+                    <p className="small font-bold" style={{ fontWeight: 700, marginTop: "0.5rem" }}>
+                      팀 발표 평가
+                    </p>
+                    <StarPicker
+                      name="teamScore"
+                      label="이 팀 발표는 몇 점인가요?"
+                      defaultValue={t.my?.star}
+                      required
+                    />
+                    <CommentBox
+                      id={`team-comment-${t.submissionId}`}
+                      name="teamComment"
+                      defaultValue={t.my?.comment}
+                      placeholder="발표에 대한 코멘트를 남겨주세요 (선택)"
+                    />
+
+                    {t.members.length > 0 ? (
+                      <>
+                        <p
+                          className="small font-bold mt-4"
+                          style={{ fontWeight: 700, paddingTop: "0.75rem", borderTop: "1px dashed var(--border)" }}
+                        >
+                          팀원 개별 평가 <span className="faint font-normal">(점수를 줄 사람만 평가해도 돼요)</span>
+                        </p>
+                        <div className="stack-sm mt-2">
+                          {t.members.map((m) => (
+                            <div key={m.userId} className="member-eval">
+                              <input type="hidden" name="memberIds" value={m.userId} />
+                              <StarPicker
+                                name={`memberScore_${m.userId}`}
+                                label={m.name}
+                                defaultValue={m.my?.star}
+                              />
+                              <CommentBox
+                                id={`member-comment-${t.submissionId}-${m.userId}`}
+                                name={`memberComment_${m.userId}`}
+                                defaultValue={m.my?.comment}
+                                placeholder={`${m.name}에게 남길 코멘트 (선택)`}
+                                compact
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    ) : null}
+
+                    <div className="cluster mt-4">
+                      <button type="submit" className="btn btn--primary btn--sm" disabled={submitting}>
+                        {t.my ? "평가 수정하기" : "평가 제출하기"}
                       </button>
-                      {myEval ? <span className="small faint">이미 평가한 발표예요. 수정 제출도 가능해요.</span> : null}
+                      {t.my ? <span className="small faint">이미 평가한 발표예요. 수정 제출도 가능해요.</span> : null}
                     </div>
                   </Form>
                 ) : s.phase === "scheduled" ? (
                   <p className="small faint mt-3">평가 기간이 되면 이곳에서 평가할 수 있어요.</p>
-                ) : myEval ? (
-                  <p className="small faint mt-3">
-                    평가 완료 — 아이디어 {myEval.idea}점 · 실현가능성 {myEval.feasibility}점 · 발표력{" "}
-                    {myEval.delivery}점
-                  </p>
+                ) : t.my ? (
+                  <p className="small faint mt-3">평가 완료 — ★{t.my.star}</p>
                 ) : (
                   <p className="small faint mt-3">평가 기간이 마감되어 제출할 수 없어요.</p>
                 )}

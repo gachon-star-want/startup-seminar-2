@@ -146,7 +146,7 @@ export const presentationSessions = sqliteTable("presentation_sessions", {
   createdAt: timestamp("created_at").$defaultFn(now).notNull(),
 });
 
-/** 학생이 발표(제출물) 하나에 남기는 평가 — 항목별 1~5점 + 코멘트 */
+/** 발표(제출물=팀) 단위 평가 — 별점 1~5 + 코멘트(300바이트) */
 export const presentationEvaluations = sqliteTable(
   "presentation_evaluations",
   {
@@ -160,10 +160,8 @@ export const presentationEvaluations = sqliteTable(
     evaluatorId: uuid("evaluator_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    ideaScore: integer("idea_score").notNull(), // 아이디어·시장성 1~5
-    feasibilityScore: integer("feasibility_score").notNull(), // 실현가능성 1~5
-    deliveryScore: integer("delivery_score").notNull(), // 발표력·완성도 1~5
-    comment: text("comment"),
+    starScore: integer("star_score").notNull(), // 별 5개 만점, 1개 단위
+    comment: text("comment"), // 최대 300바이트 (앱에서 검증)
     createdAt: timestamp("created_at").$defaultFn(now).notNull(),
     updatedAt: timestamp("updated_at").$defaultFn(now).notNull(),
   },
@@ -175,3 +173,36 @@ export const presentationEvaluations = sqliteTable(
     ),
   ],
 );
+
+/** 팀 안 개개인(팀원)에 대한 평가 — 팀 평가와 동일한 별점+코멘트 구조 */
+export const presentationMemberEvaluations = sqliteTable(
+  "presentation_member_evaluations",
+  {
+    id: uuid("id").$defaultFn(randomId).primaryKey(),
+    sessionId: uuid("session_id")
+      .notNull()
+      .references(() => presentationSessions.id, { onDelete: "cascade" }),
+    submissionId: uuid("submission_id")
+      .notNull()
+      .references(() => submissions.id, { onDelete: "cascade" }),
+    evaluatorId: uuid("evaluator_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    targetUserId: uuid("target_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    starScore: integer("star_score").notNull(),
+    comment: text("comment"),
+    createdAt: timestamp("created_at").$defaultFn(now).notNull(),
+    updatedAt: timestamp("updated_at").$defaultFn(now).notNull(),
+  },
+  (t) => [
+    uniqueIndex("presentation_member_evaluations_key").on(
+      t.sessionId,
+      t.submissionId,
+      t.evaluatorId,
+      t.targetUserId
+    ),
+  ],
+);
+

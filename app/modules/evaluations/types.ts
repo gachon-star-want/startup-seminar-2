@@ -1,9 +1,8 @@
 export type EvaluationPhase = "scheduled" | "open" | "closed";
 
 export type EvaluationScores = {
-  idea: number;
-  feasibility: number;
-  delivery: number;
+  star: number;
+  comment: string | null;
 };
 
 export type StudentSessionListItem = {
@@ -16,8 +15,17 @@ export type StudentSessionListItem = {
   opensAt: string;
   closesAt: string;
   phase: EvaluationPhase;
+  /** 평가 대상 발표(제출물) 수 — 모든 팀 포함 */
   targetCount: number;
+  /** 내가 팀 단위 평가를 끝낸 수 */
   myCount: number;
+};
+
+export type MemberEvalTarget = {
+  userId: string;
+  name: string;
+  /** 내가 이전에 남긴 개인 평가 */
+  my: EvaluationScores | null;
 };
 
 export type EvaluationTargetItem = {
@@ -26,8 +34,11 @@ export type EvaluationTargetItem = {
   presenter: string;
   content: string | null;
   link: string | null;
-  mine: boolean;
   files: { id: string; filename: string; size: number }[];
+  /** 팀 과제일 때만 팀원 목록 (개인 과제는 []) */
+  members: MemberEvalTarget[];
+  /** 내가 이전에 남긴 팀 단위 평가 */
+  my: (EvaluationScores & { updatedAt: string }) | null;
 };
 
 export type StudentSessionView = {
@@ -41,11 +52,6 @@ export type StudentSessionView = {
     phase: EvaluationPhase;
   };
   targets: EvaluationTargetItem[];
-  /** submissionId → 내가 남긴 평가 */
-  myEvaluations: Record<
-    string,
-    EvaluationScores & { comment: string | null; updatedAt: string }
-  >;
 };
 
 export type AdminSessionListItem = {
@@ -68,27 +74,24 @@ export type TargetStatItem = {
   label: string;
   presenter: string;
   evaluatorCount: number;
-  avgIdea: number;
-  avgFeasibility: number;
-  avgDelivery: number;
-  avgTotal: number;
+  avgStar: number;
 };
 
-export type EvaluatorProgressItem = {
+export type MemberStatItem = {
+  teamLabel: string;
   name: string;
-  doneCount: number;
+  evaluatorCount: number;
+  avgStar: number;
 };
 
 export type EvaluationResultRow = {
-  evaluatedAt: string;
+  kind: "team" | "member";
   presentation: string;
-  presenter: string;
+  target: string;
   evaluator: string;
-  idea: number;
-  feasibility: number;
-  delivery: number;
-  total: number;
+  star: number;
   comment: string | null;
+  evaluatedAt: string;
 };
 
 export type AdminSessionDetail = {
@@ -106,9 +109,15 @@ export type AdminSessionDetail = {
     phase: EvaluationPhase;
   };
   targets: TargetStatItem[];
+  memberStats: MemberStatItem[];
   evaluators: EvaluatorProgressItem[];
   rows: EvaluationResultRow[];
   totalEvaluationCount: number;
+};
+
+export type EvaluatorProgressItem = {
+  name: string;
+  doneCount: number;
 };
 
 export function phaseOf(opensAt: Date, closesAt: Date, now: Date): EvaluationPhase {

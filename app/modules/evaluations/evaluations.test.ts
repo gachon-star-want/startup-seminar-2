@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { EvaluationHub } from "./evaluations.server";
 import { phaseOf } from "./types";
+import { MAX_EVAL_COMMENT_BYTES } from "~/lib/constants";
 
 describe("phaseOf", () => {
   const opens = new Date("2026-09-22T09:00:00+09:00");
@@ -13,30 +14,45 @@ describe("phaseOf", () => {
   });
 });
 
-describe("EvaluationHub.parseScores", () => {
-  it("should accept integers 1..5 for all three items", () => {
-    const form = new FormData();
-    form.set("ideaScore", "5");
-    form.set("feasibilityScore", "3");
-    form.set("deliveryScore", "1");
-    const res = EvaluationHub.parseScores(form);
-    expect(res.ok).toBe(true);
-    if (res.ok) expect(res.scores).toEqual({ idea: 5, feasibility: 3, delivery: 1 });
+describe("EvaluationHub.parseStar", () => {
+  it("should accept integers 1..5", () => {
+    for (const n of [1, 2, 3, 4, 5]) {
+      const form = new FormData();
+      form.set("teamScore", String(n));
+      const res = EvaluationHub.parseStar(form, "teamScore");
+      expect(res.ok).toBe(true);
+      if (res.ok) expect(res.star).toBe(n);
+    }
   });
 
   it("should reject out-of-range, non-integer and missing scores", () => {
-    const make = (idea: string, feas: string, deliv: string) => {
+    const make = (v: string | null) => {
       const form = new FormData();
-      form.set("ideaScore", idea);
-      form.set("feasibilityScore", feas);
-      form.set("deliveryScore", deliv);
+      if (v !== null) form.set("teamScore", v);
       return form;
     };
-    expect(EvaluationHub.parseScores(make("0", "3", "3")).ok).toBe(false);
-    expect(EvaluationHub.parseScores(make("6", "3", "3")).ok).toBe(false);
-    expect(EvaluationHub.parseScores(make("3.5", "3", "3")).ok).toBe(false);
-    expect(EvaluationHub.parseScores(make("abc", "3", "3")).ok).toBe(false);
-    expect(EvaluationHub.parseScores(new FormData()).ok).toBe(false);
+    expect(EvaluationHub.parseStar(make("0"), "teamScore").ok).toBe(false);
+    expect(EvaluationHub.parseStar(make("6"), "teamScore").ok).toBe(false);
+    expect(EvaluationHub.parseStar(make("3.5"), "teamScore").ok).toBe(false);
+    expect(EvaluationHub.parseStar(make("abc"), "teamScore").ok).toBe(false);
+    expect(EvaluationHub.parseStar(make(null), "teamScore").ok).toBe(false);
+  });
+});
+
+describe("코멘트 300바이트 제한", () => {
+  it("should accept comments at or under the byte budget", () => {
+    // 한글 1글자 = 3바이트 → 100글자가 한계
+    const korean100 = "가".repeat(100);
+    expect(new TextEncoder().encode(korean100).length).toBe(MAX_EVAL_COMMENT_BYTES);
+
+    const ascii300 = "a".repeat(300);
+    expect(new TextEncoder().encode(ascii300).length).toBe(MAX_EVAL_COMMENT_BYTES);
+  });
+
+  it("should reject comments over the byte budget", () => {
+    const korean101 = "가".repeat(101);
+    expect(new TextEncoder().encode(korean101).length).toBe(MAX_EVAL_COMMENT_BYTES + 3);
+    expect(new TextEncoder().encode("a".repeat(301)).length).toBe(MAX_EVAL_COMMENT_BYTES + 1);
   });
 });
 

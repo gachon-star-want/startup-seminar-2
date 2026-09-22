@@ -31,3 +31,6 @@ export const ATTENDANCE_LABELS: Record<string, string> = {
 export const MAX_FILE_MB = 100;
 export const MAX_FILES_PER_SUBMISSION = 10;
 
+
+/** 발표 평가 코멘트 바이트 제한 (UTF-8) */
+export const MAX_EVAL_COMMENT_BYTES = 300;

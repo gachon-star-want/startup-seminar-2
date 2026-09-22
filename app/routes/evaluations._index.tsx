@@ -91,9 +91,10 @@ export default function EvaluationsRoute({ loaderData }: Route.ComponentProps) {
       <Card>
         <SectionTitle>평가 방법</SectionTitle>
         <p className="small muted help-text">
-          각 발표를 <strong>아이디어·시장성 / 실현가능성 / 발표력·완성도</strong> 세 항목으로 1~5점
-          평가하고 한 줄 코멘트를 남겨요. 우리 팀 발표는 평가 대상에서 제외돼요. 평가는 관리자가
-          설정한 기간 안에만 제출할 수 있고, 기간 안이라면 몇 번이고 수정할 수 있어요.
+          모든 팀의 발표를 대상으로, 각 팀 발표에 <strong>별점(5개 만점)</strong>과 세부 코멘트(최대
+          300바이트)를 남겨요. 우리 팀 발표도 평가 대상이에요. 또 그 팀 안에서 팀원 한 명 한 명에게
+          개별 별점과 코멘트를 줄 수 있어요. 평가는 관리자가 설정한 기간 안에만 제출할 수 있고,
+          기간 안이라면 몇 번이고 수정할 수 있어요.
         </p>
       </Card>
     </div>

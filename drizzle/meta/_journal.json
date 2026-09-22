@@ -15,6 +15,20 @@
       "when": 1790039493406,
       "tag": "0001_wise_sue_storm",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1790041735482,
+      "tag": "0002_brave_norrin_radd",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1790041770047,
+      "tag": "0003_lovely_bulldozer",
+      "breakpoints": true
     }
   ]
 }

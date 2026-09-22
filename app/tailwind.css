@@ -2001,3 +2001,11 @@ select.input {
   outline-offset: 2px;
   border-radius: 4px;
 }
+
+/* ---------- 팀원 개별 평가 블록 ---------- */
+.member-eval {
+  padding: 0.5rem 0.625rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+}

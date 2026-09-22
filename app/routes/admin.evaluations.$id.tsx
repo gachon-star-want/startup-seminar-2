@@ -205,12 +205,13 @@ export default function AdminEvaluationDetailRoute({ loaderData }: Route.Compone
         </Card>
       ) : null}
 
-      {/* 발표별 평균 */}
+      {/* 팀별 평균 */}
       <Card className="card--flush">
         <div className="card__head card__head--flush">
-          <h2 className="card__title">📊 발표별 평균 (총점 15점)</h2>
+          <h2 className="card__title">📊 팀별 평균 별점 (5점 만점)</h2>
           <p className="small faint num">
-            평가 {totalEvaluationCount}건 · 참여 {evaluators.length}명
+            팀 평가 {loaderData.detail.rows.filter((r) => r.kind === "team").length}건 · 개인 평가{" "}
+            {loaderData.detail.rows.filter((r) => r.kind === "member").length}건 · 참여 {evaluators.length}명
           </p>
         </div>
         {targets.length === 0 ? (
@@ -225,10 +226,7 @@ export default function AdminEvaluationDetailRoute({ loaderData }: Route.Compone
                   <th>발표</th>
                   <th>발표자</th>
                   <th style={{ textAlign: "center" }}>평가자 수</th>
-                  <th style={{ textAlign: "center" }}>아이디어</th>
-                  <th style={{ textAlign: "center" }}>실현가능성</th>
-                  <th style={{ textAlign: "center" }}>발표력</th>
-                  <th style={{ textAlign: "center" }}>총점 평균</th>
+                  <th style={{ textAlign: "center" }}>평균 별점</th>
                 </tr>
               </thead>
               <tbody>
@@ -239,17 +237,8 @@ export default function AdminEvaluationDetailRoute({ loaderData }: Route.Compone
                     <td className="num" style={{ textAlign: "center" }}>
                       {t.evaluatorCount}
                     </td>
-                    <td className="num" style={{ textAlign: "center" }}>
-                      {t.avgIdea.toFixed(1)}
-                    </td>
-                    <td className="num" style={{ textAlign: "center" }}>
-                      {t.avgFeasibility.toFixed(1)}
-                    </td>
-                    <td className="num" style={{ textAlign: "center" }}>
-                      {t.avgDelivery.toFixed(1)}
-                    </td>
                     <td className="num" style={{ textAlign: "center", fontWeight: 700 }}>
-                      {t.avgTotal.toFixed(1)}
+                      {t.avgStar.toFixed(1)}
                     </td>
                   </tr>
                 ))}
@@ -258,6 +247,41 @@ export default function AdminEvaluationDetailRoute({ loaderData }: Route.Compone
           </div>
         )}
       </Card>
+
+      {/* 팀원별 평균 */}
+      {loaderData.detail.memberStats.length > 0 ? (
+        <Card className="card--flush">
+          <div className="card__head card__head--flush">
+            <h2 className="card__title">👤 팀원별 평균 별점 (5점 만점)</h2>
+          </div>
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>발표</th>
+                  <th>팀원</th>
+                  <th style={{ textAlign: "center" }}>평가자 수</th>
+                  <th style={{ textAlign: "center" }}>평균 별점</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loaderData.detail.memberStats.map((m) => (
+                  <tr key={`${m.teamLabel}-${m.name}`}>
+                    <td>{m.teamLabel}</td>
+                    <td>{m.name}</td>
+                    <td className="num" style={{ textAlign: "center" }}>
+                      {m.evaluatorCount}
+                    </td>
+                    <td className="num" style={{ textAlign: "center", fontWeight: 700 }}>
+                      {m.avgStar.toFixed(1)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      ) : null}
 
       {/* 평가자별 진행률 */}
       {evaluators.length > 0 ? (
@@ -282,23 +306,23 @@ export default function AdminEvaluationDetailRoute({ loaderData }: Route.Compone
               <thead>
                 <tr>
                   <th>발표</th>
+                  <th>구분</th>
+                  <th>대상</th>
                   <th>평가자</th>
-                  <th style={{ textAlign: "center" }}>아이디어</th>
-                  <th style={{ textAlign: "center" }}>실현성</th>
-                  <th style={{ textAlign: "center" }}>발표력</th>
-                  <th style={{ textAlign: "center" }}>총점</th>
+                  <th style={{ textAlign: "center" }}>별점</th>
                   <th>코멘트</th>
                 </tr>
               </thead>
               <tbody>
                 {loaderData.detail.rows.map((r, i) => (
-                  <tr key={`${r.evaluator}-${r.presentation}-${i}`}>
+                  <tr key={`${r.evaluator}-${r.presentation}-${r.target}-${i}`}>
                     <td>{r.presentation}</td>
+                    <td className="small muted">{r.kind === "team" ? "팀 발표" : "개인(팀원)"}</td>
+                    <td>{r.target}</td>
                     <td>{r.evaluator}</td>
-                    <td className="num" style={{ textAlign: "center" }}>{r.idea}</td>
-                    <td className="num" style={{ textAlign: "center" }}>{r.feasibility}</td>
-                    <td className="num" style={{ textAlign: "center" }}>{r.delivery}</td>
-                    <td className="num" style={{ textAlign: "center", fontWeight: 700 }}>{r.total}</td>
+                    <td className="num" style={{ textAlign: "center", fontWeight: 700 }}>
+                      ★{r.star}
+                    </td>
                     <td className="small muted" style={{ whiteSpace: "pre-wrap" }}>{r.comment ?? "—"}</td>
                   </tr>
                 ))}
