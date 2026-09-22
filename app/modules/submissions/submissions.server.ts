@@ -527,7 +527,7 @@ export const SubmissionHub = {
     const [list, counts] = await Promise.all([
       ctx.db.select().from(assignments).orderBy(desc(assignments.dueAt)),
       ctx.db
-        .select({ assignmentId: submissions.assignmentId, count: sql<number>`count(*)::int` })
+        .select({ assignmentId: submissions.assignmentId, count: sql<number>`count(*)` })
         .from(submissions)
         .groupBy(submissions.assignmentId),
     ]);
