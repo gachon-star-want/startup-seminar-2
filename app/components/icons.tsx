@@ -131,6 +131,14 @@ export function IconClock(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+export function IconStar(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...iconProps(props)}>
+      <path d="m12 3.5 2.6 5.4 5.9.8-4.3 4.1 1 5.9-5.2-2.8-5.2 2.8 1-5.9-4.3-4.1 5.9-.8L12 3.5Z" />
+    </svg>
+  );
+}
+
 export function IconLogin(props: SVGProps<SVGSVGElement>) {
   return (
     <svg {...iconProps(props)}>

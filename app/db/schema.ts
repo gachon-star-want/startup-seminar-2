@@ -131,3 +131,47 @@ export const submissionFiles = sqliteTable("submission_files", {
   mime: varchar("mime", 200),
   createdAt: timestamp("created_at").$defaultFn(now).notNull(),
 });
+
+/** 발표 평가 세션 — 언제, 어떤 내용의 발표가 있고 평가 창이 언제 열리는지 */
+export const presentationSessions = sqliteTable("presentation_sessions", {
+  id: uuid("id").$defaultFn(randomId).primaryKey(),
+  sessionDate: text("session_date").notNull(), // 'YYYY-MM-DD' (KST 발표 날짜)
+  title: varchar("title", 200).notNull(), // 무슨 내용의 발표인지 (예: 3주차 팀별 발표)
+  description: text("description"),
+  assignmentId: uuid("assignment_id").references(() => assignments.id, {
+    onDelete: "set null",
+  }), // 평가 대상이 되는 발표 과제(제출물 모음)
+  opensAt: timestamp("opens_at").notNull(), // 평가 시작
+  closesAt: timestamp("closes_at").notNull(), // 평가 마감
+  createdAt: timestamp("created_at").$defaultFn(now).notNull(),
+});
+
+/** 학생이 발표(제출물) 하나에 남기는 평가 — 항목별 1~5점 + 코멘트 */
+export const presentationEvaluations = sqliteTable(
+  "presentation_evaluations",
+  {
+    id: uuid("id").$defaultFn(randomId).primaryKey(),
+    sessionId: uuid("session_id")
+      .notNull()
+      .references(() => presentationSessions.id, { onDelete: "cascade" }),
+    submissionId: uuid("submission_id")
+      .notNull()
+      .references(() => submissions.id, { onDelete: "cascade" }),
+    evaluatorId: uuid("evaluator_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    ideaScore: integer("idea_score").notNull(), // 아이디어·시장성 1~5
+    feasibilityScore: integer("feasibility_score").notNull(), // 실현가능성 1~5
+    deliveryScore: integer("delivery_score").notNull(), // 발표력·완성도 1~5
+    comment: text("comment"),
+    createdAt: timestamp("created_at").$defaultFn(now).notNull(),
+    updatedAt: timestamp("updated_at").$defaultFn(now).notNull(),
+  },
+  (t) => [
+    uniqueIndex("presentation_evaluations_session_submission_evaluator_key").on(
+      t.sessionId,
+      t.submissionId,
+      t.evaluatorId
+    ),
+  ],
+);

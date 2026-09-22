@@ -23,6 +23,7 @@ const tabs = [
   { to: "/admin", label: "개요", end: true },
   { to: "/admin/attendance", label: "출석 관리", end: false },
   { to: "/admin/assignments", label: "과제 관리", end: false },
+  { to: "/admin/evaluations", label: "발표 평가", end: false },
 ];
 
 export default function AdminRoute({ loaderData }: Route.ComponentProps) {

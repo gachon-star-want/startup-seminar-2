@@ -22,6 +22,7 @@ import {
   IconLogin,
   IconLogout,
   IconShield,
+  IconStar,
   IconTrophy,
   IconUsers,
 } from "~/components/icons";
@@ -105,6 +106,13 @@ const mainNav = [
     short: "과제",
     end: false,
     Icon: IconBook,
+  },
+  {
+    to: "/evaluations",
+    label: "발표 평가",
+    short: "평가",
+    end: false,
+    Icon: IconStar,
   },
 ] as const;
 

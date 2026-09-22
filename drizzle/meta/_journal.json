@@ -8,6 +8,13 @@
       "when": 1789977818336,
       "tag": "0000_yielding_guardsmen",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1790039493406,
+      "tag": "0001_wise_sue_storm",
+      "breakpoints": true
     }
   ]
 }

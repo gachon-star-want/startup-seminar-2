@@ -66,12 +66,21 @@ export default function AdminAssignmentDetailRoute({ loaderData }: Route.Compone
               {isEditing ? "닫기" : "⚙️ 과제 설정 수정"}
             </button>
             {loaderData.submissions.length > 0 ? (
-              <Link
-                to={`/admin/assignments/${a.id}/present`}
-                className="btn btn--primary btn--sm"
-              >
-                ▶ 발표
-              </Link>
+              <>
+                <a
+                  href={`/admin/assignments/${a.id}/zip`}
+                  className="btn btn--ghost btn--sm"
+                  title="이 과제의 모든 제출 파일을 팀별 폴더로 묶어 내려받아요"
+                >
+                  🗜️ 전체 제출 ZIP
+                </a>
+                <Link
+                  to={`/admin/assignments/${a.id}/present`}
+                  className="btn btn--primary btn--sm"
+                >
+                  ▶ 발표
+                </Link>
+              </>
             ) : null}
           </div>
         </div>
