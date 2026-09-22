@@ -1,5 +1,6 @@
 export type EvaluationPhase = "scheduled" | "open" | "closed";
 
+/** 팀 단위 평가 점수 — 팀원 개별 평가는 별점뿐이므로 이 타입은 팀 전용 */
 export type EvaluationScores = {
   star: number;
   comment: string | null;
@@ -24,8 +25,8 @@ export type StudentSessionListItem = {
 export type MemberEvalTarget = {
   userId: string;
   name: string;
-  /** 내가 이전에 남긴 개인 평가 */
-  my: EvaluationScores | null;
+  /** 내가 이전에 남긴 개인 평가 (별점만) */
+  my: { star: number } | null;
 };
 
 export type EvaluationTargetItem = {

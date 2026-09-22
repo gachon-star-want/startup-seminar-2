@@ -27,36 +27,68 @@ export async function action({ request, context, params }: Route.ActionArgs) {
 const encoder = new TextEncoder();
 const byteLen = (s: string) => encoder.encode(s).length;
 
-/** 별 5개 라디오 (required로 필수/선택 제어) */
-function StarPicker({
+/**
+ * 0.5점 단위 별점 — 별 5개, 각 별의 좌/우 반쪽을 눌러 0.5씩 조절.
+ * 반쪽이 투명 버튼이라 키보드·터치로도 고를 수 있고, 값은 hidden input으로 제출한다.
+ */
+function StarRating({
   name,
-  label,
-  defaultValue,
-  required,
+  ariaLabel,
+  defaultValue = 0,
+  clearable,
 }: {
   name: string;
-  label: string;
+  ariaLabel: string;
   defaultValue?: number;
-  required?: boolean;
+  clearable?: boolean;
 }) {
+  const [value, setValue] = useState(defaultValue);
+  const [hover, setHover] = useState(0);
+  const shown = hover || value;
   return (
-    <div className="score-row">
-      <span className="score-row__label">{label}</span>
-      <div className="score-row__opts" role="radiogroup" aria-label={label}>
-        {[1, 2, 3, 4, 5].map((n) => (
-          <label key={n} className="score-row__opt" title={`${n}점`}>
-            <input
-              type="radio"
-              name={name}
-              value={n}
-              defaultChecked={defaultValue === n}
-              required={required}
-            />
-            <span aria-hidden>★</span>
-            <span className="score-row__num">{n}</span>
-          </label>
-        ))}
-      </div>
+    <div className="stars" role="group" aria-label={ariaLabel}>
+      <input type="hidden" name={name} value={value ? String(value) : ""} />
+      {[1, 2, 3, 4, 5].map((n) => (
+        <span key={n} className="stars__star">
+          <span className="stars__bg" aria-hidden>
+            ★
+          </span>
+          <span
+            className="stars__fg"
+            aria-hidden
+            style={{ width: shown >= n ? "100%" : shown >= n - 0.5 ? "50%" : "0%" }}
+          >
+            ★
+          </span>
+          <button
+            type="button"
+            className="stars__half"
+            aria-label={`${n - 0.5}점`}
+            onClick={() => setValue(n - 0.5)}
+            onMouseEnter={() => setHover(n - 0.5)}
+            onMouseLeave={() => setHover(0)}
+          />
+          <button
+            type="button"
+            className="stars__half stars__half--r"
+            aria-label={`${n}점`}
+            onClick={() => setValue(n)}
+            onMouseEnter={() => setHover(n)}
+            onMouseLeave={() => setHover(0)}
+          />
+        </span>
+      ))}
+      {clearable && value > 0 ? (
+        <button
+          type="button"
+          className="stars__clear"
+          aria-label="별점 지우기"
+          title="별점 지우기"
+          onClick={() => setValue(0)}
+        >
+          ✕
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -67,29 +99,27 @@ function CommentBox({
   name,
   defaultValue,
   placeholder,
-  compact,
 }: {
   id: string;
   name: string;
   defaultValue?: string | null;
   placeholder: string;
-  compact?: boolean;
 }) {
   const [bytes, setBytes] = useState(() => byteLen(defaultValue ?? ""));
   const over = bytes > MAX_EVAL_COMMENT_BYTES;
   return (
-    <div className="field" style={compact ? { marginTop: "0.375rem" } : undefined}>
+    <div className="field">
       <textarea
         id={id}
         name={name}
-        rows={compact ? 1 : 2}
+        rows={2}
         className="input"
         placeholder={placeholder}
         defaultValue={defaultValue ?? ""}
         onInput={(e) => setBytes(byteLen((e.target as HTMLTextAreaElement).value))}
         style={over ? { borderColor: "var(--danger)" } : undefined}
       />
-      <p className={`hint num${over ? " text-danger" : ""}`} style={compact ? { marginTop: "0.125rem" } : undefined}>
+      <p className={`hint num${over ? " text-danger" : ""}`}>
         {bytes}/{MAX_EVAL_COMMENT_BYTES}바이트{over ? " — 초과했어요" : ""}
       </p>
     </div>
@@ -199,53 +229,55 @@ export default function EvaluationSessionRoute({ loaderData }: Route.ComponentPr
                   <Form method="post" className="mt-3">
                     <input type="hidden" name="submissionId" value={t.submissionId} />
 
-                    <p className="small font-bold" style={{ fontWeight: 700, marginTop: "0.5rem" }}>
-                      팀 발표 평가
-                    </p>
-                    <StarPicker
-                      name="teamScore"
-                      label="이 팀 발표는 몇 점인가요?"
-                      defaultValue={t.my?.star}
-                      required
-                    />
-                    <CommentBox
-                      id={`team-comment-${t.submissionId}`}
-                      name="teamComment"
-                      defaultValue={t.my?.comment}
-                      placeholder="발표에 대한 코멘트를 남겨주세요 (선택)"
-                    />
-
-                    {t.members.length > 0 ? (
-                      <>
-                        <p
-                          className="small font-bold mt-4"
-                          style={{ fontWeight: 700, paddingTop: "0.75rem", borderTop: "1px dashed var(--border)" }}
-                        >
-                          팀원 개별 평가 <span className="faint font-normal">(점수를 줄 사람만 평가해도 돼요)</span>
-                        </p>
-                        <div className="stack-sm mt-2">
-                          {t.members.map((m) => (
-                            <div key={m.userId} className="member-eval">
-                              <input type="hidden" name="memberIds" value={m.userId} />
-                              <StarPicker
-                                name={`memberScore_${m.userId}`}
-                                label={m.name}
-                                defaultValue={m.my?.star}
-                              />
-                              <CommentBox
-                                id={`member-comment-${t.submissionId}-${m.userId}`}
-                                name={`memberComment_${m.userId}`}
-                                defaultValue={m.my?.comment}
-                                placeholder={`${m.name}에게 남길 코멘트 (선택)`}
-                                compact
-                              />
-                            </div>
-                          ))}
+                    <div className="eval-sheet">
+                      <div className="eval-sheet__row">
+                        <div className="eval-sheet__label" id={`label-team-${t.submissionId}`}>
+                          팀 평가
                         </div>
-                      </>
-                    ) : null}
+                        <div className="eval-sheet__body">
+                          <StarRating
+                            name="teamScore"
+                            ariaLabel="이 팀 발표는 몇 점인가요?"
+                            defaultValue={t.my?.star ?? 0}
+                          />
+                        </div>
+                      </div>
+                      <div className="eval-sheet__row">
+                        <div className="eval-sheet__label">팀 코멘트</div>
+                        <div className="eval-sheet__body">
+                          <CommentBox
+                            id={`team-comment-${t.submissionId}`}
+                            name="teamComment"
+                            defaultValue={t.my?.comment}
+                            placeholder="발표에 대한 코멘트를 남겨주세요 (선택)"
+                          />
+                        </div>
+                      </div>
+                      {t.members.length > 0 ? (
+                        <div className="eval-sheet__row">
+                          <div className="eval-sheet__label">개별 평가</div>
+                          <div className="eval-sheet__body">
+                            <div className="stack-sm">
+                              {t.members.map((m) => (
+                                <div key={m.userId} className="eval-sheet__member">
+                                  <input type="hidden" name="memberIds" value={m.userId} />
+                                  <span className="eval-sheet__member-name">{m.name}</span>
+                                  <StarRating
+                                    name={`memberScore_${m.userId}`}
+                                    ariaLabel={`${m.name} 별점`}
+                                    defaultValue={m.my?.star ?? 0}
+                                    clearable
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                            <p className="hint">점수를 줄 팀원에게만 별점을 눌러도 돼요.</p>
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
 
-                    <div className="cluster mt-4">
+                    <div className="cluster mt-3">
                       <button type="submit" className="btn btn--primary btn--sm" disabled={submitting}>
                         {t.my ? "평가 수정하기" : "평가 제출하기"}
                       </button>

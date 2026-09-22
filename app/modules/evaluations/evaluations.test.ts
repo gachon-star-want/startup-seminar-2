@@ -15,25 +15,25 @@ describe("phaseOf", () => {
 });
 
 describe("EvaluationHub.parseStar", () => {
-  it("should accept integers 1..5", () => {
-    for (const n of [1, 2, 3, 4, 5]) {
+  it("should accept 0.5-step scores from 0.5 to 5", () => {
+    for (const v of [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5]) {
       const form = new FormData();
-      form.set("teamScore", String(n));
+      form.set("teamScore", String(v));
       const res = EvaluationHub.parseStar(form, "teamScore");
       expect(res.ok).toBe(true);
-      if (res.ok) expect(res.star).toBe(n);
+      if (res.ok) expect(res.star).toBe(v);
     }
   });
 
-  it("should reject out-of-range, non-integer and missing scores", () => {
+  it("should reject out-of-range, non-half-step and missing scores", () => {
     const make = (v: string | null) => {
       const form = new FormData();
       if (v !== null) form.set("teamScore", v);
       return form;
     };
     expect(EvaluationHub.parseStar(make("0"), "teamScore").ok).toBe(false);
-    expect(EvaluationHub.parseStar(make("6"), "teamScore").ok).toBe(false);
-    expect(EvaluationHub.parseStar(make("3.5"), "teamScore").ok).toBe(false);
+    expect(EvaluationHub.parseStar(make("5.5"), "teamScore").ok).toBe(false);
+    expect(EvaluationHub.parseStar(make("2.3"), "teamScore").ok).toBe(false);
     expect(EvaluationHub.parseStar(make("abc"), "teamScore").ok).toBe(false);
     expect(EvaluationHub.parseStar(make(null), "teamScore").ok).toBe(false);
   });

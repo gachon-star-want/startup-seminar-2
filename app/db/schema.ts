@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { real, sqliteTable, text, integer, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 /** UUID — SQLite엔 uuid 타입이 없어 text + 런타임 생성으로 대체 */
 const uuid = (name: string) => text(name);
@@ -146,7 +146,7 @@ export const presentationSessions = sqliteTable("presentation_sessions", {
   createdAt: timestamp("created_at").$defaultFn(now).notNull(),
 });
 
-/** 발표(제출물=팀) 단위 평가 — 별점 1~5 + 코멘트(300바이트) */
+/** 발표(제출물=팀) 단위 평가 — 별점 0.5~5.0(0.5 단위) + 코멘트(300바이트) */
 export const presentationEvaluations = sqliteTable(
   "presentation_evaluations",
   {
@@ -160,7 +160,7 @@ export const presentationEvaluations = sqliteTable(
     evaluatorId: uuid("evaluator_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    starScore: integer("star_score").notNull(), // 별 5개 만점, 1개 단위
+    starScore: real("star_score").notNull(), // 별 5개 만점, 0.5개 단위
     comment: text("comment"), // 최대 300바이트 (앱에서 검증)
     createdAt: timestamp("created_at").$defaultFn(now).notNull(),
     updatedAt: timestamp("updated_at").$defaultFn(now).notNull(),
@@ -174,7 +174,7 @@ export const presentationEvaluations = sqliteTable(
   ],
 );
 
-/** 팀 안 개개인(팀원)에 대한 평가 — 팀 평가와 동일한 별점+코멘트 구조 */
+/** 팀 안 개개인(팀원)에 대한 평가 — 별점만 (코멘트는 팀당 하나) */
 export const presentationMemberEvaluations = sqliteTable(
   "presentation_member_evaluations",
   {
@@ -191,8 +191,7 @@ export const presentationMemberEvaluations = sqliteTable(
     targetUserId: uuid("target_user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    starScore: integer("star_score").notNull(),
-    comment: text("comment"),
+    starScore: real("star_score").notNull(),
     createdAt: timestamp("created_at").$defaultFn(now).notNull(),
     updatedAt: timestamp("updated_at").$defaultFn(now).notNull(),
   },

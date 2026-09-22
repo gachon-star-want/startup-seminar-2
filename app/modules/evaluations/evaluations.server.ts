@@ -52,11 +52,11 @@ export type SessionInput = {
  * 발표 평가 세션 관리, 학생의 팀·팀원 평가 저장/조회, 관리자 통계 및 XLSX 결과 생성을 캡슐화합니다.
  */
 export const EvaluationHub = {
-  /** 별점 1~5 파싱 (form 값은 "1"~"5" 문자열) */
+  /** 별점 0.5~5.0 파싱 (0.5 단위 — form 값은 "0.5"~"5" 문자열) */
   parseStar(form: FormData, field: string): { ok: true; star: number } | { ok: false; message: string } {
     const raw = Number(form.get(field));
-    if (!Number.isInteger(raw) || raw < 1 || raw > 5) {
-      return { ok: false, message: "별점을 1~5개 중에 선택해 주세요." };
+    if (!Number.isFinite(raw) || raw < 0.5 || raw > 5 || !Number.isInteger(raw * 2)) {
+      return { ok: false, message: "별점을 0.5점 단위로 선택해 주세요." };
     }
     return { ok: true, star: raw };
   },
@@ -156,7 +156,7 @@ export const EvaluationHub = {
         link: r.submission.link,
         teamId: r.submission.teamId,
         files: [] as { id: string; filename: string; size: number }[],
-        members: [] as { userId: string; name: string; my: { star: number; comment: string | null } | null }[],
+        members: [] as { userId: string; name: string; my: { star: number } | null }[],
         my: null as { star: number; comment: string | null; updatedAt: string } | null,
       }))
       .sort((a, b) => a.label.localeCompare(b.label, "ko"));
@@ -218,7 +218,7 @@ export const EvaluationHub = {
             return {
               userId: m.userId,
               name: m.name,
-              my: prev ? { star: prev.starScore, comment: prev.comment } : null,
+              my: prev ? { star: prev.starScore } : null,
             };
           })
           .sort((a, b) => a.name.localeCompare(b.name, "ko"));
@@ -281,9 +281,9 @@ export const EvaluationHub = {
       return { ok: false, message: `코멘트는 최대 ${MAX_EVAL_COMMENT_BYTES}바이트까지 쓸 수 있어요.` };
     }
 
-    // 팀원 개별 평가 (선택 — 별점을 고른 멤버만 저장)
+    // 팀원 개별 평가 (선택 — 별점을 고른 멤버만 저장, 코멘트는 없음)
     const memberIds = form.getAll("memberIds").map(String);
-    const memberInputs: { userId: string; star: number; comment: string | null }[] = [];
+    const memberInputs: { userId: string; star: number }[] = [];
     if (memberIds.length > 0) {
       if (submission.teamId) {
         const roster = await ctx.db
@@ -295,11 +295,7 @@ export const EvaluationHub = {
           if (!validIds.has(memberId)) continue; // 그 팀 소속이 아닌 유저는 무시
           const star = EvaluationHub.parseStar(form, `memberScore_${memberId}`);
           if (!star.ok) continue; // 별점 미선택 멤버는 건너뜀
-          const comment = validateComment(String(form.get(`memberComment_${memberId}`) ?? ""));
-          if (!comment.ok) {
-            return { ok: false, message: `코멘트는 최대 ${MAX_EVAL_COMMENT_BYTES}바이트까지 쓸 수 있어요.` };
-          }
-          memberInputs.push({ userId: memberId, star: star.star, comment: comment.value });
+          memberInputs.push({ userId: memberId, star: star.star });
         }
       }
     }
@@ -332,7 +328,7 @@ export const EvaluationHub = {
       });
     }
 
-    // 팀원 개별 평가 upsert
+    // 팀원 개별 평가 upsert (별점만)
     for (const m of memberInputs) {
       const [prev] = await ctx.db
         .select({ id: presentationMemberEvaluations.id })
@@ -350,7 +346,7 @@ export const EvaluationHub = {
       if (prev) {
         await ctx.db
           .update(presentationMemberEvaluations)
-          .set({ starScore: m.star, comment: m.comment, updatedAt: ctx.now })
+          .set({ starScore: m.star, updatedAt: ctx.now })
           .where(eq(presentationMemberEvaluations.id, prev.id));
       } else {
         await ctx.db.insert(presentationMemberEvaluations).values({
@@ -359,7 +355,6 @@ export const EvaluationHub = {
           evaluatorId: ctx.user.id,
           targetUserId: m.userId,
           starScore: m.star,
-          comment: m.comment,
         });
       }
     }
@@ -592,7 +587,7 @@ export const EvaluationHub = {
         target: memberNameMap.get(e.evaluation.targetUserId) ?? "알 수 없음",
         evaluator: e.evaluatorName,
         star: e.evaluation.starScore,
-        comment: e.evaluation.comment,
+        comment: null,
         evaluatedAt: e.evaluation.updatedAt.toISOString(),
       })),
     ].sort(

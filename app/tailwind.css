@@ -1923,89 +1923,122 @@ select.input {
   display: none !important;
 }
 
-/* ---------- 발표 평가 별점 ---------- */
-.score-row {
+/* ---------- 발표 평가 — 평가지 표 레이아웃 ---------- */
+.eval-sheet {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.eval-sheet__row {
+  display: grid;
+  grid-template-columns: 6.5rem minmax(0, 1fr);
+}
+
+.eval-sheet__row + .eval-sheet__row {
+  border-top: 1px solid var(--border);
+}
+
+.eval-sheet__label {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-  padding: 0.375rem 0;
-}
-
-.score-row + .score-row {
-  border-top: 1px dashed var(--border);
-}
-
-.score-row__label {
+  padding: 0.625rem 0.75rem;
+  background: var(--surface-2);
+  border-right: 1px solid var(--border);
   font-size: var(--t-sm);
-  font-weight: 600;
+  font-weight: 700;
   color: var(--text);
 }
 
-.score-row__opts {
-  display: flex;
-  gap: 0.25rem;
+.eval-sheet__body {
+  padding: 0.625rem 0.875rem;
+  min-width: 0;
 }
 
-.score-row__opt {
-  position: relative;
+.eval-sheet__body .field {
+  margin-top: 0;
+}
+
+.eval-sheet__member {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 0.0625rem;
-  padding: 0.25rem 0.375rem;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  user-select: none;
+  gap: 0.75rem;
+  flex-wrap: wrap;
 }
 
-.score-row__opt input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
+.eval-sheet__member-name {
+  font-size: var(--t-sm);
+  font-weight: 600;
+  min-width: 5rem;
 }
 
-.score-row__opt span[aria-hidden] {
-  font-size: 1.125rem;
+/* ---------- 0.5 단위 별점 위젯 ---------- */
+.stars {
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+}
+
+.stars__star {
+  position: relative;
+  display: inline-block;
   line-height: 1;
+}
+
+.stars__bg,
+.stars__fg {
+  font-size: 1.875rem;
+  line-height: 1;
+}
+
+.stars__bg {
   color: var(--surface-3);
-  transition: color 0.12s, transform 0.12s;
 }
 
-.score-row__num {
-  font-size: 0.6875rem;
-  font-weight: 700;
-  color: var(--text-3);
-}
-
-.score-row__opt:hover span[aria-hidden] {
-  transform: scale(1.15);
-}
-
-.score-row__opt:hover .score-row__num {
-  color: var(--text-2);
-}
-
-.score-row__opt input:checked + span[aria-hidden] {
+.stars__fg {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  white-space: nowrap;
   color: var(--warning-solid);
+  pointer-events: none;
 }
 
-.score-row__opt input:checked ~ .score-row__num {
-  color: var(--warning);
+/* 반쪽 버튼 — 내용 없는 투명 버튼으로 좌/우 클릭 영역을 나눈다 */
+.stars__half {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 50%;
+  height: 100%;
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  z-index: 1;
 }
 
-.score-row__opt input:focus-visible + span[aria-hidden] {
+.stars__half--r {
+  left: 50%;
+}
+
+.stars__half:focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: 2px;
   border-radius: 4px;
 }
 
-/* ---------- 팀원 개별 평가 블록 ---------- */
-.member-eval {
-  padding: 0.5rem 0.625rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--surface-2);
+.stars__clear {
+  margin-left: 0.375rem;
+  border: none;
+  background: none;
+  color: var(--text-3);
+  font-size: 0.8125rem;
+  cursor: pointer;
+  padding: 0.25rem 0.375rem;
+  border-radius: var(--radius-sm);
+}
+
+.stars__clear:hover {
+  color: var(--danger);
 }
