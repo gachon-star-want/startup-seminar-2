@@ -29,8 +29,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
       .limit(1),
   ]);
   const teamByUser = new Map(memberships.map((m) => [m.userId, m.teamName]));
-  // 휴학(inactive) 학생은 통계·현황에서 제외 (명단에는 표시해서 복학 가능하게)
-  const activeStudents = allUsers.filter((u) => u.role !== "professor" && u.status !== "inactive");
+  const students = allUsers.filter((u) => u.role !== "professor");
   let todaySummary: { present: number; late: number; absent: number } | null = null;
   if (todaySession) {
     const records = await db
@@ -41,7 +40,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
     let present = 0;
     let late = 0;
     let absent = 0;
-    for (const u of activeStudents) {
+    for (const u of students) {
       const s = recordByUser.get(u.id);
       if (s === "present") present++;
       else if (s === "late") late++;
@@ -52,7 +51,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   }
 
   return {
-    studentCount: activeStudents.length,
+    studentCount: students.length,
     teamCount: allTeams.length,
     sessionCount: sessions.length,
     todaySummary,
@@ -61,7 +60,6 @@ export async function loader({ request, context }: Route.LoaderArgs) {
         id: u.id,
         name: u.name,
         role: u.role,
-        status: u.status,
         teamName: teamByUser.get(u.id) ?? null,
       }))
       .sort((a, b) => {
@@ -76,10 +74,9 @@ export async function action({ request, context }: Route.ActionArgs) {
   const form = await request.formData();
   const intent = String(form.get("intent") ?? "");
 
-  if (intent === "toggleStatus") {
+  if (intent === "deleteUser") {
     const userId = String(form.get("userId") ?? "");
-    const status = String(form.get("status") ?? "") === "inactive" ? "inactive" : "active";
-    const res = await UserRoster.setStatus(ctx, userId, status);
+    const res = await UserRoster.remove(ctx, userId);
     if (!res.ok) return data({ error: res.message }, { status: 400 });
     return { ok: true as const };
   }
@@ -128,15 +125,14 @@ export default function AdminIndexRoute({ loaderData }: Route.ComponentProps) {
                 <th>이름</th>
                 <th>구분</th>
                 <th>팀</th>
-                <th>상태</th>
+                <th>관리</th>
               </tr>
             </thead>
             <tbody>
               {loaderData.users.map((u) => {
                 const isProfessor = u.role === "professor";
-                const inactive = u.status === "inactive";
                 return (
-                  <tr key={u.id} className={inactive ? "roster-row--inactive" : undefined}>
+                  <tr key={u.id}>
                     <td data-label="이름" style={{ fontWeight: 700 }}>
                       {u.name}
                     </td>
@@ -150,25 +146,27 @@ export default function AdminIndexRoute({ loaderData }: Route.ComponentProps) {
                     <td data-label="팀" className="muted">
                       {u.teamName ?? <span className="faint">없음</span>}
                     </td>
-                    <td data-label="상태">
+                    <td data-label="관리">
                       {isProfessor ? (
                         <span className="faint">—</span>
-                      ) : inactive ? (
-                        <span className="badge badge--amber">휴학</span>
                       ) : (
-                        <span className="badge badge--green">재학</span>
-                      )}
-                      {!isProfessor && (
-                        <Form method="post" className="inline-form">
-                          <input type="hidden" name="intent" value="toggleStatus" />
+                        <Form
+                          method="post"
+                          className="inline-form"
+                          onSubmit={(e) => {
+                            if (
+                              !confirm(
+                                `${u.name} 학생을 명단에서 삭제할까요?\n출석·제출물·평가 기록이 모두 지워지고 되돌릴 수 없어요.`
+                              )
+                            ) {
+                              e.preventDefault();
+                            }
+                          }}
+                        >
+                          <input type="hidden" name="intent" value="deleteUser" />
                           <input type="hidden" name="userId" value={u.id} />
-                          <input
-                            type="hidden"
-                            name="status"
-                            value={inactive ? "active" : "inactive"}
-                          />
-                          <button type="submit" className="btn btn--ghost btn--sm">
-                            {inactive ? "복학" : "휴학 처리"}
+                          <button type="submit" className="btn btn--danger btn--sm">
+                            삭제
                           </button>
                         </Form>
                       )}

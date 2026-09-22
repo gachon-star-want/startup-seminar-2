@@ -18,8 +18,6 @@ export const users = sqliteTable(
     birth4: varchar("birth4", 4),
     // student | professor
     role: varchar("role", 16).notNull().default("student"),
-    // active | inactive (inactive = 휴학 등 휴식 — 로그인 차단, 명단 제외, 기록은 유지)
-    status: varchar("status", 16).notNull().default("active"),
     createdAt: timestamp("created_at").$defaultFn(now).notNull(),
   },
   (t) => [

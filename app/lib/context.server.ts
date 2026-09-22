@@ -78,7 +78,6 @@ export async function requireAdminAppContext(
     studentNumber: null,
     birth4: null,
     role: "professor",
-    status: "active",
     createdAt: new Date(),
   };
 

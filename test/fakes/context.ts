@@ -8,7 +8,6 @@ export function createTestUser(overrides?: Partial<UserRecord>): UserRecord {
     studentNumber: overrides?.studentNumber ?? "20260001",
     birth4: overrides?.birth4 ?? "0806",
     role: overrides?.role ?? "student",
-    status: overrides?.status ?? "active",
     createdAt: overrides?.createdAt ?? new Date("2026-09-01T00:00:00Z"),
   };
 }

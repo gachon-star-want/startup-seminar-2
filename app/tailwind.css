@@ -1451,12 +1451,7 @@ select.input {
   color: var(--text-3);
 }
 
-/* 휴학 학생 행 — 흐리게 표시 */
-.roster-row--inactive td {
-  opacity: 0.55;
-}
-
-/* 테이블 셀 안 인라인 폼 (휴학 처리 버튼 등) */
+/* 테이블 셀 안 인라인 폼 (삭제 버튼 등) */
 .inline-form {
   display: inline-block;
   margin-left: 0.375rem;
