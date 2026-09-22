@@ -84,7 +84,10 @@ export async function requireAdminAppContext(
   return {
     db: session.db,
     env: cf.env,
-    user: adminUser,
+    // 일반 학생 계정으로 로그인돼 있어도 관리자 쿠키가 권한을 증명하므로
+    // role을 professor로 강제한다 — 그렇지 않으면 ctx.user.role로 관리자를
+    // 판정하는 코드(submission 조회·파일 스트리밍 등)가 403으로 오판한다.
+    user: { ...adminUser, role: "professor" },
     isAdmin: true,
     now: new Date(),
     executionCtx: cf.ctx,
