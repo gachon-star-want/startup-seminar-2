@@ -244,14 +244,16 @@ export const EvaluationHub = {
   },
 
   /**
-   * 학생 평가 저장/수정 — 팀 단위 별점(필수) + 팀원 개별 별점(선택).
-   * 모든 팀이 평가 대상이므로 자기 팀 제외는 없다. 평가 창 안에서만 가능.
+   * 학생 평가 저장 — 페이지의 모든 팀을 한 번에 저장한다.
+   * 팀별 필드는 teamScore_{제출물} / teamComment_{제출물} / memberIds_{제출물} / memberScore_{제출물}_{팀원}.
+   * intent=draft(임시 저장)는 별점을 고른 팀만 조용히 저장하고 부분 입력은 무시하며,
+   * intent=submit(제출)은 입력만 해놓고 별점이 없는 팀이 있으면 어느 팀인지 알려주고 거절한다.
    */
   async saveEvaluation(
     ctx: AppContext,
     sessionId: string,
     form: FormData
-  ): Promise<{ ok: true; message: string } | { ok: false; message: string }> {
+  ): Promise<{ ok: true; message: string; saved: number } | { ok: false; message: string }> {
     const [session] = await ctx.db
       .select()
       .from(presentationSessions)
@@ -263,103 +265,166 @@ export const EvaluationHub = {
       return { ok: false, message: "지금은 이 세션의 평가 기간이 아니에요." };
     }
 
-    const submissionId = String(form.get("submissionId") ?? "");
-    const [submission] = await ctx.db
-      .select()
-      .from(submissions)
-      .where(eq(submissions.id, submissionId))
-      .limit(1);
-    if (!submission || submission.assignmentId !== session.assignmentId) {
-      return { ok: false, message: "이 세션의 평가 대상 발표가 아니에요." };
+    const draft = String(form.get("intent") ?? "submit") === "draft";
+
+    const submissionIds = [...new Set(form.getAll("submissionId").map(String))].filter(Boolean);
+    if (submissionIds.length === 0) {
+      return { ok: false, message: "평가 대상 발표가 없어요." };
     }
 
-    // 팀 단위 평가 (필수)
-    const teamStar = EvaluationHub.parseStar(form, "teamScore");
-    if (!teamStar.ok) return teamStar;
-    const teamComment = validateComment(String(form.get("teamComment") ?? ""));
-    if (!teamComment.ok) {
-      return { ok: false, message: `코멘트는 최대 ${MAX_EVAL_COMMENT_BYTES}바이트까지 쓸 수 있어요.` };
-    }
+    // 이 세션의 평가 대상 제출물만 통과 — 대상 밖의 submissionId는 조용히 무시
+    const targetRows = session.assignmentId
+      ? await ctx.db
+          .select({ id: submissions.id, teamId: submissions.teamId, teamName: teams.name, userName: users.name })
+          .from(submissions)
+          .innerJoin(users, eq(submissions.userId, users.id))
+          .leftJoin(teams, eq(submissions.teamId, teams.id))
+          .where(eq(submissions.assignmentId, session.assignmentId))
+      : [];
+    const targetMap = new Map(
+      targetRows.map((r) => [
+        r.id,
+        { teamId: r.teamId, label: r.teamName ? `${r.teamName} 팀` : r.userName },
+      ])
+    );
 
-    // 팀원 개별 평가 (선택 — 별점을 고른 멤버만 저장, 코멘트는 없음)
-    const memberIds = form.getAll("memberIds").map(String);
-    const memberInputs: { userId: string; star: number }[] = [];
-    if (memberIds.length > 0) {
-      if (submission.teamId) {
-        const roster = await ctx.db
-          .select({ userId: teamMembers.userId })
+    // 팀원 명단 일괄 조회 — 그 팀 소속이 아닌 유저에 대한 평가는 무시
+    const teamIds = [...new Set(targetRows.map((r) => r.teamId).filter((id): id is string => Boolean(id)))];
+    const rosterRows = teamIds.length
+      ? await ctx.db
+          .select({ teamId: teamMembers.teamId, userId: teamMembers.userId })
           .from(teamMembers)
-          .where(eq(teamMembers.teamId, submission.teamId));
-        const validIds = new Set(roster.map((r) => r.userId));
-        for (const memberId of memberIds) {
-          if (!validIds.has(memberId)) continue; // 그 팀 소속이 아닌 유저는 무시
-          const star = EvaluationHub.parseStar(form, `memberScore_${memberId}`);
-          if (!star.ok) continue; // 별점 미선택 멤버는 건너뜀
-          memberInputs.push({ userId: memberId, star: star.star });
+          .where(inArray(teamMembers.teamId, teamIds))
+      : [];
+    const rosterByTeam = new Map<string, Set<string>>();
+    for (const r of rosterRows) {
+      const set = rosterByTeam.get(r.teamId) ?? new Set<string>();
+      set.add(r.userId);
+      rosterByTeam.set(r.teamId, set);
+    }
+
+    const plans: {
+      submissionId: string;
+      star: number;
+      comment: string | null;
+      members: { userId: string; star: number }[];
+    }[] = [];
+
+    for (const submissionId of submissionIds) {
+      const target = targetMap.get(submissionId);
+      if (!target) continue;
+
+      let comment = validateComment(String(form.get(`teamComment_${submissionId}`) ?? ""));
+      if (!comment.ok) {
+        if (draft) {
+          comment = { ok: true, value: null }; // 임시 저장 중 초과 코멘트는 일단 뺀다 (제출 때 거절)
+        } else {
+          return { ok: false, message: `코멘트는 최대 ${MAX_EVAL_COMMENT_BYTES}바이트까지 쓸 수 있어요.` };
         }
       }
+
+      const members: { userId: string; star: number }[] = [];
+      const roster = target.teamId ? rosterByTeam.get(target.teamId) : undefined;
+      for (const memberId of form.getAll(`memberIds_${submissionId}`).map(String)) {
+        if (!roster?.has(memberId)) continue; // 그 팀 소속이 아닌 유저는 무시
+        const memberField = `memberScore_${submissionId}_${memberId}`;
+        if (!String(form.get(memberField) ?? "").trim()) continue; // 별점 미선택 멤버는 건너뜀
+        const star = EvaluationHub.parseStar(form, memberField);
+        if (!star.ok) {
+          if (draft) continue;
+          return star;
+        }
+        members.push({ userId: memberId, star: star.star });
+      }
+
+      const starRaw = String(form.get(`teamScore_${submissionId}`) ?? "").trim();
+      if (!starRaw) {
+        if (draft) continue; // 별점 전의 부분 입력(코멘트만 등)은 임시 저장에서 제외
+        if (comment.value || members.length > 0) {
+          return { ok: false, message: `${target.label}의 별점을 골라 주세요.` };
+        }
+        continue; // 아무것도 입력하지 않은 팀은 저장하지 않음
+      }
+      const teamStar = EvaluationHub.parseStar(form, `teamScore_${submissionId}`);
+      if (!teamStar.ok) {
+        if (draft) continue;
+        return teamStar;
+      }
+
+      plans.push({ submissionId, star: teamStar.star, comment: comment.value, members });
     }
 
-    // 팀 단위 평가 upsert
-    const [existing] = await ctx.db
-      .select({ id: presentationEvaluations.id })
-      .from(presentationEvaluations)
-      .where(
-        and(
-          eq(presentationEvaluations.sessionId, sessionId),
-          eq(presentationEvaluations.submissionId, submissionId),
-          eq(presentationEvaluations.evaluatorId, ctx.user.id)
-        )
-      )
-      .limit(1);
-
-    if (existing) {
-      await ctx.db
-        .update(presentationEvaluations)
-        .set({ starScore: teamStar.star, comment: teamComment.value, updatedAt: ctx.now })
-        .where(eq(presentationEvaluations.id, existing.id));
-    } else {
-      await ctx.db.insert(presentationEvaluations).values({
-        sessionId,
-        submissionId,
-        evaluatorId: ctx.user.id,
-        starScore: teamStar.star,
-        comment: teamComment.value,
-      });
+    if (plans.length === 0) {
+      if (draft) return { ok: true, message: "임시 저장했어요.", saved: 0 };
+      return { ok: false, message: "별점을 하나 이상 골라 저장해 주세요." };
     }
 
-    // 팀원 개별 평가 upsert (별점만)
-    for (const m of memberInputs) {
-      const [prev] = await ctx.db
-        .select({ id: presentationMemberEvaluations.id })
-        .from(presentationMemberEvaluations)
+    // 저장 — 팀 단위 평가 upsert
+    for (const p of plans) {
+      const [existing] = await ctx.db
+        .select({ id: presentationEvaluations.id })
+        .from(presentationEvaluations)
         .where(
           and(
-            eq(presentationMemberEvaluations.sessionId, sessionId),
-            eq(presentationMemberEvaluations.submissionId, submissionId),
-            eq(presentationMemberEvaluations.evaluatorId, ctx.user.id),
-            eq(presentationMemberEvaluations.targetUserId, m.userId)
+            eq(presentationEvaluations.sessionId, sessionId),
+            eq(presentationEvaluations.submissionId, p.submissionId),
+            eq(presentationEvaluations.evaluatorId, ctx.user.id)
           )
         )
         .limit(1);
 
-      if (prev) {
+      if (existing) {
         await ctx.db
-          .update(presentationMemberEvaluations)
-          .set({ starScore: m.star, updatedAt: ctx.now })
-          .where(eq(presentationMemberEvaluations.id, prev.id));
+          .update(presentationEvaluations)
+          .set({ starScore: p.star, comment: p.comment, updatedAt: ctx.now })
+          .where(eq(presentationEvaluations.id, existing.id));
       } else {
-        await ctx.db.insert(presentationMemberEvaluations).values({
+        await ctx.db.insert(presentationEvaluations).values({
           sessionId,
-          submissionId,
+          submissionId: p.submissionId,
           evaluatorId: ctx.user.id,
-          targetUserId: m.userId,
-          starScore: m.star,
+          starScore: p.star,
+          comment: p.comment,
         });
+      }
+
+      // 팀원 개별 평가 upsert (별점만)
+      for (const m of p.members) {
+        const [prev] = await ctx.db
+          .select({ id: presentationMemberEvaluations.id })
+          .from(presentationMemberEvaluations)
+          .where(
+            and(
+              eq(presentationMemberEvaluations.sessionId, sessionId),
+              eq(presentationMemberEvaluations.submissionId, p.submissionId),
+              eq(presentationMemberEvaluations.evaluatorId, ctx.user.id),
+              eq(presentationMemberEvaluations.targetUserId, m.userId)
+            )
+          )
+          .limit(1);
+
+        if (prev) {
+          await ctx.db
+            .update(presentationMemberEvaluations)
+            .set({ starScore: m.star, updatedAt: ctx.now })
+            .where(eq(presentationMemberEvaluations.id, prev.id));
+        } else {
+          await ctx.db.insert(presentationMemberEvaluations).values({
+            sessionId,
+            submissionId: p.submissionId,
+            evaluatorId: ctx.user.id,
+            targetUserId: m.userId,
+            starScore: m.star,
+          });
+        }
       }
     }
 
-    return { ok: true, message: "평가가 저장되었어요!" };
+    return {
+      ok: true,
+      saved: plans.length,
+      message: draft ? "임시 저장했어요." : `${plans.length}개 팀의 평가를 제출했어요!`,
+    };
   },
 
   /**

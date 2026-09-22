@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Link, useActionData, useNavigation } from "react-router";
+import { useEffect, useRef, useState } from "react";
+import { Link, useActionData, useFetcher, useNavigation } from "react-router";
 import type { Route } from "./+types/evaluations.$id";
 import { Form } from "react-router";
 import { requireAppContext } from "~/lib/context.server";
@@ -7,7 +7,8 @@ import { EvaluationHub } from "~/modules/evaluations/index.server";
 import { MAX_EVAL_COMMENT_BYTES } from "~/lib/constants";
 import { fmtKST, ymdLabel } from "~/lib/time";
 import { IconArrowLeft } from "~/components/icons";
-import { Badge, Card, EmptyState, ErrorText, formatBytes } from "~/components/ui";
+import { Badge, Card, EmptyState, formatBytes } from "~/components/ui";
+import type { EvaluationTargetItem } from "~/modules/evaluations/types";
 
 export async function loader({ request, context, params }: Route.LoaderArgs) {
   const ctx = await requireAppContext(request, context);
@@ -19,13 +20,16 @@ export async function action({ request, context, params }: Route.ActionArgs) {
   const form = await request.formData();
   const result = await EvaluationHub.saveEvaluation(ctx, params.id!, form);
   if (!result.ok) {
-    return { error: result.message, message: undefined as string | undefined };
+    return { error: result.message, message: undefined as string | undefined, saved: 0 };
   }
-  return { error: undefined as string | undefined, message: result.message };
+  return { error: undefined as string | undefined, message: result.message, saved: result.saved };
 }
 
 const encoder = new TextEncoder();
 const byteLen = (s: string) => encoder.encode(s).length;
+
+/** 임시 저장 디바운스 — 마지막 입력 후 이 시간이 지나면 저장 */
+const DRAFT_DEBOUNCE_MS = 600;
 
 /**
  * 0.5점 단위 별점 — 별 5개, 각 별의 좌/우 반쪽을 눌러 0.5씩 조절.
@@ -36,15 +40,21 @@ function StarRating({
   ariaLabel,
   defaultValue = 0,
   clearable,
+  onChange,
 }: {
   name: string;
   ariaLabel: string;
   defaultValue?: number;
   clearable?: boolean;
+  onChange?: () => void;
 }) {
   const [value, setValue] = useState(defaultValue);
   const [hover, setHover] = useState(0);
   const shown = hover || value;
+  const pick = (v: number) => {
+    setValue(v);
+    onChange?.();
+  };
   return (
     <div className="stars" role="group" aria-label={ariaLabel}>
       <input type="hidden" name={name} value={value ? String(value) : ""} />
@@ -64,7 +74,7 @@ function StarRating({
             type="button"
             className="stars__half"
             aria-label={`${n - 0.5}점`}
-            onClick={() => setValue(n - 0.5)}
+            onClick={() => pick(n - 0.5)}
             onMouseEnter={() => setHover(n - 0.5)}
             onMouseLeave={() => setHover(0)}
           />
@@ -72,7 +82,7 @@ function StarRating({
             type="button"
             className="stars__half stars__half--r"
             aria-label={`${n}점`}
-            onClick={() => setValue(n)}
+            onClick={() => pick(n)}
             onMouseEnter={() => setHover(n)}
             onMouseLeave={() => setHover(0)}
           />
@@ -84,7 +94,7 @@ function StarRating({
           className="stars__clear"
           aria-label="별점 지우기"
           title="별점 지우기"
-          onClick={() => setValue(0)}
+          onClick={() => pick(0)}
         >
           ✕
         </button>
@@ -99,11 +109,13 @@ function CommentBox({
   name,
   defaultValue,
   placeholder,
+  onEdit,
 }: {
   id: string;
   name: string;
   defaultValue?: string | null;
   placeholder: string;
+  onEdit?: () => void;
 }) {
   const [bytes, setBytes] = useState(() => byteLen(defaultValue ?? ""));
   const over = bytes > MAX_EVAL_COMMENT_BYTES;
@@ -116,7 +128,10 @@ function CommentBox({
         className="input"
         placeholder={placeholder}
         defaultValue={defaultValue ?? ""}
-        onInput={(e) => setBytes(byteLen((e.target as HTMLTextAreaElement).value))}
+        onInput={(e) => {
+          setBytes(byteLen((e.target as HTMLTextAreaElement).value));
+          onEdit?.();
+        }}
         style={over ? { borderColor: "var(--danger)" } : undefined}
       />
       <p className={`hint num${over ? " text-danger" : ""}`}>
@@ -126,13 +141,161 @@ function CommentBox({
   );
 }
 
+/** 발표 카드 — 제출물 내용은 항상, 평가 입력은 폼 안에서만. status가 주어지면 입력 대신 안내문 */
+function EvaluationCard({
+  t,
+  index,
+  status,
+  onEdit,
+}: {
+  t: EvaluationTargetItem;
+  index: number;
+  status?: string;
+  onEdit?: () => void;
+}) {
+  return (
+    <Card>
+      <div className="cluster cluster--between">
+        <div className="cluster minw-0">
+          <strong className="card__title">
+            {index + 1}. {t.label}
+          </strong>
+          {t.my ? <Badge tone="green">평가 완료 ★{t.my.star}</Badge> : null}
+        </div>
+        <span className="small faint">발표자: {t.presenter}</span>
+      </div>
+
+      {t.content ? (
+        <p className="notice notice--neutral notice-body" style={{ whiteSpace: "pre-wrap" }}>
+          {t.content}
+        </p>
+      ) : null}
+      {t.link ? (
+        <p className="small mt-2">
+          🔗{" "}
+          <a href={t.link} target="_blank" rel="noreferrer" className="link-url card__link">
+            {t.link}
+          </a>
+        </p>
+      ) : null}
+      {t.files.length > 0 ? (
+        <ul className="stack-sm mt-2 bare-list">
+          {t.files.map((f) => (
+            <li key={f.id} className="item-link">
+              <span className="small ellipsis minw-0">
+                📄{" "}
+                <a
+                  href={`/files/${f.id}?inline=1`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="card__link"
+                  title="새 탭에서 보기"
+                >
+                  {f.filename}
+                </a>{" "}
+                <span className="faint">({formatBytes(f.size)})</span>
+              </span>
+              <a href={`/files/${f.id}`} download={f.filename} className="btn btn--ghost btn--sm">
+                다운로드
+              </a>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      {status ? (
+        <p className="small faint mt-3">{status}</p>
+      ) : (
+        <>
+          <input type="hidden" name="submissionId" value={t.submissionId} />
+          <div className="eval-sheet mt-3">
+          <div className="eval-sheet__row">
+            <div className="eval-sheet__label">팀 평가</div>
+            <div className="eval-sheet__body">
+              <StarRating
+                name={`teamScore_${t.submissionId}`}
+                ariaLabel={`${t.label} 별점`}
+                defaultValue={t.my?.star ?? 0}
+                onChange={onEdit}
+              />
+            </div>
+          </div>
+          <div className="eval-sheet__row">
+            <div className="eval-sheet__label">팀 코멘트</div>
+            <div className="eval-sheet__body">
+              <CommentBox
+                id={`team-comment-${t.submissionId}`}
+                name={`teamComment_${t.submissionId}`}
+                defaultValue={t.my?.comment}
+                placeholder="발표에 대한 코멘트를 남겨주세요 (선택)"
+                onEdit={onEdit}
+              />
+            </div>
+          </div>
+          {t.members.length > 0 ? (
+            <div className="eval-sheet__row">
+              <div className="eval-sheet__label">개별 평가</div>
+              <div className="eval-sheet__body">
+                <div className="stack-sm">
+                  {t.members.map((m) => (
+                    <div key={m.userId} className="eval-sheet__member">
+                      <input type="hidden" name={`memberIds_${t.submissionId}`} value={m.userId} />
+                      <span className="eval-sheet__member-name">{m.name}</span>
+                      <StarRating
+                        name={`memberScore_${t.submissionId}_${m.userId}`}
+                        ariaLabel={`${t.label} — ${m.name} 별점`}
+                        defaultValue={m.my?.star ?? 0}
+                        clearable
+                        onChange={onEdit}
+                      />
+                    </div>
+                  ))}
+                </div>
+                <p className="hint">점수를 줄 팀원에게만 별점을 눌러도 돼요.</p>
+              </div>
+            </div>
+          ) : null}
+          </div>
+        </>
+      )}
+    </Card>
+  );
+}
+
 export default function EvaluationSessionRoute({ loaderData }: Route.ComponentProps) {
   const actionData = useActionData<typeof action>();
+  const draftFetcher = useFetcher<typeof action>();
   const navigation = useNavigation();
+  const formRef = useRef<HTMLFormElement>(null);
+  const draftTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
   const s = loaderData.session;
   const targets = loaderData.targets;
   const doneCount = targets.filter((t) => t.my).length;
   const submitting = navigation.state === "submitting";
+  const canEvaluate = s.phase === "open";
+
+  useEffect(() => () => clearTimeout(draftTimer.current), []);
+
+  /** 입력이 멈추면 폼 전체를 임시 저장한다 — 별점을 고른 팀만 서버에 반영된다 */
+  const queueDraftSave = () => {
+    clearTimeout(draftTimer.current);
+    draftTimer.current = setTimeout(() => {
+      if (!formRef.current) return;
+      const fd = new FormData(formRef.current);
+      fd.set("intent", "draft");
+      draftFetcher.submit(fd, { method: "post" });
+    }, DRAFT_DEBOUNCE_MS);
+  };
+
+  const draftSaving = draftFetcher.state !== "idle";
+  const draftStatus = draftSaving
+    ? "임시 저장 중…"
+    : draftFetcher.data?.error
+      ? draftFetcher.data.error
+      : draftFetcher.data && draftFetcher.data.saved > 0
+        ? "임시 저장됨 ✓"
+        : "";
 
   return (
     <div className="stack-xl">
@@ -160,140 +323,53 @@ export default function EvaluationSessionRoute({ loaderData }: Route.ComponentPr
         ) : null}
       </div>
 
-      <ErrorText>{actionData?.error}</ErrorText>
-      {actionData?.message ? (
-        <div className="notice notice--success" style={{ padding: "0.75rem 1rem", borderRadius: "8px" }}>
-          <p className="small" style={{ color: "var(--success, #10b981)", fontWeight: 600 }}>
-            {actionData.message}
-          </p>
-        </div>
-      ) : null}
-
       {targets.length === 0 ? (
         <EmptyState>이 세션에 연결된 발표 제출물이 아직 없어요.</EmptyState>
+      ) : canEvaluate ? (
+        <Form method="post" ref={formRef}>
+          <input type="hidden" name="intent" value="submit" />
+          <div className="stack-md">
+            {targets.map((t, i) => (
+              <EvaluationCard key={t.submissionId} t={t} index={i} onEdit={queueDraftSave} />
+            ))}
+          </div>
+
+          <div className="eval-submit">
+            {draftStatus ? (
+              <p className={`hint${draftFetcher.data?.error ? " text-danger" : ""}`} aria-live="polite">
+                {draftStatus}
+              </p>
+            ) : null}
+            {actionData?.error ? <p className="small text-danger">{actionData.error}</p> : null}
+            {actionData?.message ? (
+              <p className="small" style={{ color: "var(--success, #10b981)", fontWeight: 600 }}>
+                {actionData.message}
+              </p>
+            ) : null}
+            <button type="submit" className="btn btn--primary" disabled={submitting}>
+              {submitting ? "제출 중..." : "제출"}
+            </button>
+            <p className="hint">
+              별점을 고르면 자동으로 임시 저장돼요. 제출을 누르면 최종 제출이에요.
+            </p>
+          </div>
+        </Form>
       ) : (
         <div className="stack-md">
-          {targets.map((t, i) => {
-            const canEvaluate = s.phase === "open";
-            return (
-              <Card key={t.submissionId}>
-                <div className="cluster cluster--between">
-                  <div className="cluster minw-0">
-                    <strong className="card__title">
-                      {i + 1}. {t.label}
-                    </strong>
-                    {t.my ? <Badge tone="green">평가 완료 ★{t.my.star}</Badge> : null}
-                  </div>
-                  <span className="small faint">발표자: {t.presenter}</span>
-                </div>
-
-                {t.content ? (
-                  <p className="notice notice--neutral notice-body" style={{ whiteSpace: "pre-wrap" }}>
-                    {t.content}
-                  </p>
-                ) : null}
-                {t.link ? (
-                  <p className="small mt-2">
-                    🔗{" "}
-                    <a href={t.link} target="_blank" rel="noreferrer" className="link-url card__link">
-                      {t.link}
-                    </a>
-                  </p>
-                ) : null}
-                {t.files.length > 0 ? (
-                  <ul className="stack-sm mt-2 bare-list">
-                    {t.files.map((f) => (
-                      <li key={f.id} className="item-link">
-                        <span className="small ellipsis minw-0">
-                          📄{" "}
-                          <a
-                            href={`/files/${f.id}?inline=1`}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="card__link"
-                            title="새 탭에서 보기"
-                          >
-                            {f.filename}
-                          </a>{" "}
-                          <span className="faint">({formatBytes(f.size)})</span>
-                        </span>
-                        <a href={`/files/${f.id}`} download={f.filename} className="btn btn--ghost btn--sm">
-                          다운로드
-                        </a>
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-
-                {canEvaluate ? (
-                  <Form method="post" className="mt-3">
-                    <input type="hidden" name="submissionId" value={t.submissionId} />
-
-                    <div className="eval-sheet">
-                      <div className="eval-sheet__row">
-                        <div className="eval-sheet__label" id={`label-team-${t.submissionId}`}>
-                          팀 평가
-                        </div>
-                        <div className="eval-sheet__body">
-                          <StarRating
-                            name="teamScore"
-                            ariaLabel="이 팀 발표는 몇 점인가요?"
-                            defaultValue={t.my?.star ?? 0}
-                          />
-                        </div>
-                      </div>
-                      <div className="eval-sheet__row">
-                        <div className="eval-sheet__label">팀 코멘트</div>
-                        <div className="eval-sheet__body">
-                          <CommentBox
-                            id={`team-comment-${t.submissionId}`}
-                            name="teamComment"
-                            defaultValue={t.my?.comment}
-                            placeholder="발표에 대한 코멘트를 남겨주세요 (선택)"
-                          />
-                        </div>
-                      </div>
-                      {t.members.length > 0 ? (
-                        <div className="eval-sheet__row">
-                          <div className="eval-sheet__label">개별 평가</div>
-                          <div className="eval-sheet__body">
-                            <div className="stack-sm">
-                              {t.members.map((m) => (
-                                <div key={m.userId} className="eval-sheet__member">
-                                  <input type="hidden" name="memberIds" value={m.userId} />
-                                  <span className="eval-sheet__member-name">{m.name}</span>
-                                  <StarRating
-                                    name={`memberScore_${m.userId}`}
-                                    ariaLabel={`${m.name} 별점`}
-                                    defaultValue={m.my?.star ?? 0}
-                                    clearable
-                                  />
-                                </div>
-                              ))}
-                            </div>
-                            <p className="hint">점수를 줄 팀원에게만 별점을 눌러도 돼요.</p>
-                          </div>
-                        </div>
-                      ) : null}
-                    </div>
-
-                    <div className="cluster mt-3">
-                      <button type="submit" className="btn btn--primary btn--sm" disabled={submitting}>
-                        {t.my ? "평가 수정하기" : "평가 제출하기"}
-                      </button>
-                      {t.my ? <span className="small faint">이미 평가한 발표예요. 수정 제출도 가능해요.</span> : null}
-                    </div>
-                  </Form>
-                ) : s.phase === "scheduled" ? (
-                  <p className="small faint mt-3">평가 기간이 되면 이곳에서 평가할 수 있어요.</p>
-                ) : t.my ? (
-                  <p className="small faint mt-3">평가 완료 — ★{t.my.star}</p>
-                ) : (
-                  <p className="small faint mt-3">평가 기간이 마감되어 제출할 수 없어요.</p>
-                )}
-              </Card>
-            );
-          })}
+          {targets.map((t, i) => (
+            <EvaluationCard
+              key={t.submissionId}
+              t={t}
+              index={i}
+              status={
+                s.phase === "scheduled"
+                  ? "평가 기간이 되면 이곳에서 평가할 수 있어요."
+                  : t.my
+                    ? `평가 완료 — ★${t.my.star}`
+                    : "평가 기간이 마감되어 제출할 수 없어요."
+              }
+            />
+          ))}
         </div>
       )}
     </div>
