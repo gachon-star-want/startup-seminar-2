@@ -108,7 +108,14 @@ export default function AdminAssignmentsRoute({ loaderData }: Route.ComponentPro
                   <Link to={`/admin/assignments/${a.id}`} prefetch="intent" className="card__link">
                     제출물 보기 →
                   </Link>
-                  <Form method="post">
+                  <Form
+                    method="post"
+                    onSubmit={(e) => {
+                      if (!confirm(`"${a.title}" 과제를 삭제할까요?\n관련된 모든 제출물과 파일이 함께 삭제되고 되돌릴 수 없어요.`)) {
+                        e.preventDefault();
+                      }
+                    }}
+                  >
                     <input type="hidden" name="intent" value="delete" />
                     <input type="hidden" name="assignmentId" value={a.id} />
                     <button type="submit" className="btn btn--danger btn--sm">

@@ -123,7 +123,15 @@ export default function AdminAttendanceRoute({ loaderData }: Route.ComponentProp
                   {loaderData.sessions.map((s) => (
                     <th key={s.id} style={{ textAlign: "center" }}>
                       <div className="num">{s.label}</div>
-                      <Form method="post" style={{ marginTop: "0.125rem" }}>
+                      <Form
+                        method="post"
+                        style={{ marginTop: "0.125rem" }}
+                        onSubmit={(e) => {
+                          if (!confirm(`이 날짜(${s.label})를 삭제할까요?\n해당 날짜의 출석 기록이 모두 사라져요.`)) {
+                            e.preventDefault();
+                          }
+                        }}
+                      >
                         <input type="hidden" name="intent" value="deleteSession" />
                         <input type="hidden" name="sessionId" value={s.id} />
                         <button type="submit" className="del-x" title="이 날짜 삭제">
