@@ -1565,6 +1565,33 @@ select.input {
   color: var(--danger);
 }
 
+/* 출석 이력 테이블의 대체 과제 확장 행 */
+.sub-expand > td {
+  background: var(--surface-2);
+  border-top: 1px dashed var(--border-strong);
+  padding: 0.875rem 1rem;
+}
+
+.sub-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.sub-item__body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.sub-edit > summary {
+  cursor: pointer;
+  font-size: var(--t-sm);
+  font-weight: 700;
+  color: var(--primary);
+  user-select: none;
+}
+
 /* ---------- 18. 상태 메시지 ---------- */
 .empty {
   border: 1px dashed var(--border-strong);

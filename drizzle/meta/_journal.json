@@ -57,6 +57,20 @@
       "when": 1790657635638,
       "tag": "0007_eager_typhoid_mary",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1790697469936,
+      "tag": "0008_add_approved_from",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1790697481457,
+      "tag": "0009_drop_assignment_entity",
+      "breakpoints": true
     }
   ]
 }

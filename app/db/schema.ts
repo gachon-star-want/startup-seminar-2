@@ -133,24 +133,11 @@ export const submissionFiles = sqliteTable("submission_files", {
   createdAt: timestamp("created_at").$defaultFn(now).notNull(),
 });
 
-/** 출석 대체 과제 — 결석 만회용 보고서 과제 (세션에 묶이지 않고 학생이 대상 결석을 선택) */
-export const substituteAssignments = sqliteTable("substitute_assignments", {
-  id: uuid("id").$defaultFn(randomId).primaryKey(),
-  title: varchar("title", 200).notNull(),
-  description: text("description"),
-  opensAt: timestamp("opens_at").notNull(), // 제출 시작
-  closesAt: timestamp("closes_at").notNull(), // 제출 마감
-  createdAt: timestamp("created_at").$defaultFn(now).notNull(),
-});
-
-/** 출석 대체 과제 제출 — (과제, 학생, 대상 출석 세션)당 1회. 승인 시 해당 출석 기록이 substituted로 변경 */
+/** 출석 대체 과제 제출 — 지각/결석한 수업 날짜별 보고서. (학생, 대상 출석 세션)당 1회. 승인 시 해당 출석 기록이 substituted로 변경 */
 export const substituteSubmissions = sqliteTable(
   "substitute_submissions",
   {
     id: uuid("id").$defaultFn(randomId).primaryKey(),
-    assignmentId: uuid("assignment_id")
-      .notNull()
-      .references(() => substituteAssignments.id, { onDelete: "cascade" }),
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
@@ -161,18 +148,14 @@ export const substituteSubmissions = sqliteTable(
     link: varchar("link", 1000),
     // pending | approved | rejected
     status: varchar("status", 16).notNull().default("pending"),
+    // 승인 직전 출석 상태('late'|'absent') — 반려/취소 시 원상복구용
+    approvedFrom: varchar("approved_from", 16),
     reviewNote: varchar("review_note", 500),
     submittedAt: timestamp("submitted_at").$defaultFn(now).notNull(),
     reviewedAt: timestamp("reviewed_at"),
     updatedAt: timestamp("updated_at").$defaultFn(now).notNull(),
   },
-  (t) => [
-    uniqueIndex("substitute_submissions_assignment_user_session_key").on(
-      t.assignmentId,
-      t.userId,
-      t.sessionId
-    ),
-  ],
+  (t) => [uniqueIndex("substitute_submissions_user_session_key").on(t.userId, t.sessionId)],
 );
 
 export const substituteFiles = sqliteTable("substitute_files", {

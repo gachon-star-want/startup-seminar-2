@@ -1,8 +1,7 @@
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   attendanceRecords,
   attendanceSessions,
-  substituteAssignments,
   substituteFiles,
   substituteSubmissions,
   users,
@@ -16,187 +15,92 @@ import {
   uploadStreamToR2,
 } from "~/modules/submissions/storage";
 import { ymdLabel } from "~/lib/time";
-import { isEligibleForSubstitute, substitutePhaseOf } from "./types";
+import { isEligibleForSubstitute } from "./types";
 import type {
-  AdminSubstituteDetail,
-  AdminSubstituteListItem,
-  StudentSubstituteItem,
-  StudentSubstitutesView,
+  AdminSubstituteRow,
+  MySubstituteItem,
   SubstituteStatus,
   SubstituteZipSourceRow,
 } from "./types";
 
-function toKstDatetimeLocal(d: Date): string {
-  const kstMs = d.getTime() + 9 * 60 * 60 * 1000;
-  return new Date(kstMs).toISOString().slice(0, 16);
-}
-
-function buildSubstituteR2Key(assignmentId: string, userId: string, filename: string): string {
+function buildSubstituteR2Key(sessionId: string, userId: string, filename: string): string {
   const safeName = sanitizeFilename(filename);
   const uuid = crypto.randomUUID();
-  return `substitutes/${assignmentId}/${userId}/${uuid}-${safeName}`;
+  return `substitutes/${sessionId}/${userId}/${uuid}-${safeName}`;
 }
 
-export type SubstituteAssignmentInput = {
-  title: string;
-  description?: string;
-  opensAtRaw: string;
-  closesAtRaw: string;
-};
+/** 상태 필터 쿼리 값 — "all"이면 전체 */
+export type SubstituteReviewFilter = SubstituteStatus | "all";
+
+async function loadFilesBySubmission(
+  ctx: AppContext,
+  submissionIds: string[]
+): Promise<Map<string, { id: string; filename: string; size: number }[]>> {
+  const files =
+    submissionIds.length > 0
+      ? await ctx.db
+          .select()
+          .from(substituteFiles)
+          .where(inArray(substituteFiles.submissionId, submissionIds))
+      : [];
+
+  const map = new Map<string, { id: string; filename: string; size: number }[]>();
+  for (const f of files) {
+    const list = map.get(f.submissionId) ?? [];
+    list.push({ id: f.id, filename: f.filename, size: f.size });
+    map.set(f.submissionId, list);
+  }
+  return map;
+}
 
 /**
  * SubstituteHub Deep Module
- * 출석 대체 과제 생성/관리, 결석 학생의 보고서 제출(R2 스트리밍), 승인/반려에 따른
- * 출석 기록(substituted) 연동을 캡슐화합니다.
+ * 출석 이력의 지각/결석 날짜에 학생이 직접 제출하는 대체 과제(보고서)와
+ * 승인/반려에 따른 출석 기록(substituted) 연동을 캡슐화합니다.
  */
 export const SubstituteHub = {
   /**
-   * 과제 입력 검증 (순수) — 제목, KST datetime-local 형식, 마감 > 시작
+   * 학생 뷰 — 내 제출물 목록 (출석 이력 행과 sessionId로 매칭)
    */
-  parseAssignmentInput(
-    input: SubstituteAssignmentInput
-  ): { ok: true; values: { title: string; description: string | null; opensAt: Date; closesAt: Date } } | { ok: false; message: string } {
-    const title = input.title.trim();
-    const description = input.description?.trim() || null;
-    const opensAtRaw = input.opensAtRaw.trim();
-    const closesAtRaw = input.closesAtRaw.trim();
+  async listMySubmissions(ctx: AppContext): Promise<MySubstituteItem[]> {
+    const rows = await ctx.db
+      .select({
+        sub: substituteSubmissions,
+        sessionDate: attendanceSessions.sessionDate,
+      })
+      .from(substituteSubmissions)
+      .innerJoin(attendanceSessions, eq(substituteSubmissions.sessionId, attendanceSessions.id))
+      .where(eq(substituteSubmissions.userId, ctx.user.id));
 
-    if (!title) return { ok: false, message: "과제 제목을 입력해 주세요." };
-    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(opensAtRaw)) {
-      return { ok: false, message: "제출 시작 시각을 입력해 주세요." };
-    }
-    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(closesAtRaw)) {
-      return { ok: false, message: "제출 마감 시각을 입력해 주세요." };
-    }
-    const opensAt = new Date(`${opensAtRaw}:00+09:00`);
-    const closesAt = new Date(`${closesAtRaw}:00+09:00`);
-    if (Number.isNaN(opensAt.getTime()) || Number.isNaN(closesAt.getTime())) {
-      return { ok: false, message: "시각 형식이 올바르지 않아요." };
-    }
-    if (closesAt <= opensAt) {
-      return { ok: false, message: "마감 시각이 시작 시각보다 앞서면 안 돼요." };
-    }
+    const filesBySub = await loadFilesBySubmission(
+      ctx,
+      rows.map((r) => r.sub.id)
+    );
 
-    return { ok: true, values: { title, description, opensAt, closesAt } };
+    return rows
+      .map((r) => ({
+        id: r.sub.id,
+        sessionId: r.sub.sessionId,
+        dateLabel: ymdLabel(r.sessionDate),
+        content: r.sub.content,
+        link: r.sub.link,
+        status: r.sub.status as SubstituteStatus,
+        reviewNote: r.sub.reviewNote,
+        submittedAt: r.sub.submittedAt.toISOString(),
+        files: filesBySub.get(r.sub.id) ?? [],
+      }))
+      .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt));
   },
 
   /**
-   * 학생 뷰 — 열려 있는 대체 과제와, 만회 가능한 내 결석 수업, 내 제출물을 한 번에 조회
-   */
-  async listForStudent(ctx: AppContext): Promise<StudentSubstitutesView> {
-    const [assignments, sessions, records, submissions] = await Promise.all([
-      ctx.db.select().from(substituteAssignments).orderBy(asc(substituteAssignments.closesAt)),
-      ctx.db.select().from(attendanceSessions),
-      ctx.db
-        .select({ sessionId: attendanceRecords.sessionId, status: attendanceRecords.status })
-        .from(attendanceRecords)
-        .where(eq(attendanceRecords.userId, ctx.user.id)),
-      ctx.db
-        .select()
-        .from(substituteSubmissions)
-        .where(eq(substituteSubmissions.userId, ctx.user.id)),
-    ]);
-
-    const subIds = submissions.map((s) => s.id);
-    const files =
-      subIds.length > 0
-        ? await ctx.db
-            .select()
-            .from(substituteFiles)
-            .where(inArray(substituteFiles.submissionId, subIds))
-        : [];
-
-    const filesBySub = new Map<string, typeof files>();
-    for (const f of files) {
-      const list = filesBySub.get(f.submissionId) ?? [];
-      list.push(f);
-      filesBySub.set(f.submissionId, list);
-    }
-
-    const statusBySession = new Map(records.map((r) => [r.sessionId, r.status]));
-    const sessionById = new Map(sessions.map((s) => [s.id, s]));
-    const submittedKey = new Set(submissions.map((s) => `${s.assignmentId}:${s.sessionId}`));
-    const subsByAssignment = new Map<string, typeof submissions>();
-    for (const s of submissions) {
-      const list = subsByAssignment.get(s.assignmentId) ?? [];
-      list.push(s);
-      subsByAssignment.set(s.assignmentId, list);
-    }
-
-    const items: StudentSubstituteItem[] = assignments.map((a) => {
-      const eligibleSessions = sessions
-        .filter((s) => isEligibleForSubstitute(s, statusBySession.get(s.id) ?? null, ctx.now))
-        .filter((s) => !submittedKey.has(`${a.id}:${s.id}`))
-        .sort((x, y) => y.sessionDate.localeCompare(x.sessionDate))
-        .map((s) => ({
-          sessionId: s.id,
-          sessionDate: s.sessionDate,
-          dateLabel: ymdLabel(s.sessionDate),
-        }));
-
-      const mySubmissions = (subsByAssignment.get(a.id) ?? [])
-        .map((s) => {
-          const session = sessionById.get(s.sessionId);
-          return {
-            id: s.id,
-            sessionId: s.sessionId,
-            dateLabel: session ? ymdLabel(session.sessionDate) : "삭제된 수업",
-            content: s.content,
-            link: s.link,
-            status: s.status as SubstituteStatus,
-            reviewNote: s.reviewNote,
-            submittedAt: s.submittedAt.toISOString(),
-            files: (filesBySub.get(s.id) ?? []).map((f) => ({
-              id: f.id,
-              filename: f.filename,
-              size: f.size,
-            })),
-          };
-        })
-        .sort((x, y) => y.submittedAt.localeCompare(x.submittedAt));
-
-      return {
-        id: a.id,
-        title: a.title,
-        description: a.description,
-        opensAt: a.opensAt.toISOString(),
-        closesAt: a.closesAt.toISOString(),
-        phase: substitutePhaseOf(a.opensAt, a.closesAt, ctx.now),
-        eligibleSessions,
-        mySubmissions,
-      };
-    });
-
-    return { assignments: items };
-  },
-
-  /**
-   * 보고서 제출/수정 — 결석자 자격 검증 후 파일 Zero-Heap R2 스트리밍.
-   * 재제출 시 심사 상태를 대기중(pending)으로 되돌린다.
+   * 보고서 제출/수정 — 지각/결석 날짜 자격 검증 후 파일 Zero-Heap R2 스트리밍.
+   * (학생, 출석 날짜)당 1건, 재제출 시 심사 상태를 대기중(pending)으로 되돌린다.
    */
   async submit(
     ctx: AppContext,
     form: FormData
   ): Promise<{ ok: true; message: string } | { ok: false; message: string }> {
-    const assignmentId = String(form.get("assignmentId") ?? "");
     const sessionId = String(form.get("sessionId") ?? "");
-
-    const [assignment] = await ctx.db
-      .select()
-      .from(substituteAssignments)
-      .where(eq(substituteAssignments.id, assignmentId))
-      .limit(1);
-    if (!assignment) {
-      throw new Response("대체 과제를 찾을 수 없어요", { status: 404 });
-    }
-
-    const phase = substitutePhaseOf(assignment.opensAt, assignment.closesAt, ctx.now);
-    if (phase === "scheduled") {
-      return { ok: false, message: "아직 제출 시작 전이에요." };
-    }
-    if (phase === "closed") {
-      return { ok: false, message: "마감된 과제예요. 제출할 수 없어요." };
-    }
 
     const [session] = await ctx.db
       .select()
@@ -219,7 +123,7 @@ export const SubstituteHub = {
       .limit(1);
 
     if (!isEligibleForSubstitute(session, record?.status ?? null, ctx.now)) {
-      return { ok: false, message: "결석한 수업만 대체 과제로 만회할 수 있어요." };
+      return { ok: false, message: "지각하거나 결석한 수업만 대체 과제로 만회할 수 있어요." };
     }
 
     const [existing] = await ctx.db
@@ -227,7 +131,6 @@ export const SubstituteHub = {
       .from(substituteSubmissions)
       .where(
         and(
-          eq(substituteSubmissions.assignmentId, assignmentId),
           eq(substituteSubmissions.userId, ctx.user.id),
           eq(substituteSubmissions.sessionId, sessionId)
         )
@@ -287,7 +190,6 @@ export const SubstituteHub = {
     const [row] = await ctx.db
       .insert(substituteSubmissions)
       .values({
-        assignmentId,
         userId: ctx.user.id,
         sessionId,
         content: content || null,
@@ -298,7 +200,6 @@ export const SubstituteHub = {
       })
       .onConflictDoUpdate({
         target: [
-          substituteSubmissions.assignmentId,
           substituteSubmissions.userId,
           substituteSubmissions.sessionId,
         ],
@@ -316,7 +217,7 @@ export const SubstituteHub = {
     // 3. 새 파일 R2 Zero-Heap 스트리밍 업로드 및 DB 등록
     for (const file of newFiles) {
       const mime = inferMimeType(file.name, file.type);
-      const key = buildSubstituteR2Key(assignmentId, ctx.user.id, file.name);
+      const key = buildSubstituteR2Key(sessionId, ctx.user.id, file.name);
 
       await uploadStreamToR2(ctx.env.FILES, key, file, mime);
 
@@ -373,175 +274,76 @@ export const SubstituteHub = {
   },
 
   /**
-   * 관리자 대체 과제 목록 및 제출/승인 수
+   * 관리자 검토함 — 전체 제출물 최신순 (학생, 대상 수업, 현재 출석 상태, 파일 포함)
    */
-  async listForAdmin(ctx: AppContext): Promise<AdminSubstituteListItem[]> {
-    const [list, counts, approved] = await Promise.all([
-      ctx.db.select().from(substituteAssignments).orderBy(asc(substituteAssignments.closesAt)),
-      ctx.db
-        .select({
-          assignmentId: substituteSubmissions.assignmentId,
-          count: sql<number>`count(*)`,
-        })
-        .from(substituteSubmissions)
-        .groupBy(substituteSubmissions.assignmentId),
-      ctx.db
-        .select({
-          assignmentId: substituteSubmissions.assignmentId,
-          count: sql<number>`count(*)`,
-        })
-        .from(substituteSubmissions)
-        .where(eq(substituteSubmissions.status, "approved"))
-        .groupBy(substituteSubmissions.assignmentId),
-    ]);
-
-    const countMap = new Map(counts.map((c) => [c.assignmentId, c.count]));
-    const approvedMap = new Map(approved.map((c) => [c.assignmentId, c.count]));
-
-    return list.map((a) => ({
-      id: a.id,
-      title: a.title,
-      description: a.description,
-      opensAt: a.opensAt.toISOString(),
-      closesAt: a.closesAt.toISOString(),
-      phase: substitutePhaseOf(a.opensAt, a.closesAt, ctx.now),
-      submissionCount: countMap.get(a.id) ?? 0,
-      approvedCount: approvedMap.get(a.id) ?? 0,
-    }));
-  },
-
-  /**
-   * 관리자 과제 상세 — 제출물 목록 (학생, 대상 수업, 파일 포함)
-   */
-  async getAdminDetail(ctx: AppContext, assignmentId: string): Promise<AdminSubstituteDetail> {
-    const [assignment] = await ctx.db
-      .select()
-      .from(substituteAssignments)
-      .where(eq(substituteAssignments.id, assignmentId))
-      .limit(1);
-    if (!assignment) {
-      throw new Response("대체 과제를 찾을 수 없어요", { status: 404 });
-    }
-
-    const rows = await ctx.db
+  async listForAdminReview(
+    ctx: AppContext,
+    filter: SubstituteReviewFilter
+  ): Promise<AdminSubstituteRow[]> {
+    const base = ctx.db
       .select({
-        submission: substituteSubmissions,
+        sub: substituteSubmissions,
         userName: users.name,
         sessionDate: attendanceSessions.sessionDate,
+        attendanceStatus: attendanceRecords.status,
       })
       .from(substituteSubmissions)
       .innerJoin(users, eq(substituteSubmissions.userId, users.id))
       .innerJoin(attendanceSessions, eq(substituteSubmissions.sessionId, attendanceSessions.id))
-      .where(eq(substituteSubmissions.assignmentId, assignmentId));
+      .leftJoin(
+        attendanceRecords,
+        and(
+          eq(attendanceRecords.sessionId, substituteSubmissions.sessionId),
+          eq(attendanceRecords.userId, substituteSubmissions.userId)
+        )
+      )
+      .$dynamic();
 
-    const subIds = rows.map((r) => r.submission.id);
-    const files =
-      subIds.length > 0
-        ? await ctx.db
-            .select()
-            .from(substituteFiles)
-            .where(inArray(substituteFiles.submissionId, subIds))
-        : [];
+    const rows = await (filter === "all" ? base : base.where(eq(substituteSubmissions.status, filter)))
+      .orderBy(desc(substituteSubmissions.submittedAt));
 
-    const filesBySub = new Map<string, typeof files>();
-    for (const f of files) {
-      const list = filesBySub.get(f.submissionId) ?? [];
-      list.push(f);
-      filesBySub.set(f.submissionId, list);
-    }
+    const filesBySub = await loadFilesBySubmission(ctx, rows.map((r) => r.sub.id));
 
-    return {
-      assignment: {
-        id: assignment.id,
-        title: assignment.title,
-        description: assignment.description,
-        opensAt: assignment.opensAt.toISOString(),
-        opensAtLocal: toKstDatetimeLocal(assignment.opensAt),
-        closesAt: assignment.closesAt.toISOString(),
-        closesAtLocal: toKstDatetimeLocal(assignment.closesAt),
-        phase: substitutePhaseOf(assignment.opensAt, assignment.closesAt, ctx.now),
-      },
-      submissions: rows
-        .map((r) => ({
-          id: r.submission.id,
-          userName: r.userName,
-          dateLabel: ymdLabel(r.sessionDate),
-          content: r.submission.content,
-          link: r.submission.link,
-          status: r.submission.status as SubstituteStatus,
-          reviewNote: r.submission.reviewNote,
-          submittedAt: r.submission.submittedAt.toISOString(),
-          files: (filesBySub.get(r.submission.id) ?? []).map((f) => ({
-            id: f.id,
-            filename: f.filename,
-            size: f.size,
-          })),
-        }))
-        .sort((a, b) => a.userName.localeCompare(b.userName, "ko")),
+    return rows.map((r) => ({
+      id: r.sub.id,
+      userId: r.sub.userId,
+      userName: r.userName,
+      sessionId: r.sub.sessionId,
+      dateLabel: ymdLabel(r.sessionDate),
+      attendanceStatus: r.attendanceStatus,
+      content: r.sub.content,
+      link: r.sub.link,
+      status: r.sub.status as SubstituteStatus,
+      reviewNote: r.sub.reviewNote,
+      submittedAt: r.sub.submittedAt.toISOString(),
+      files: filesBySub.get(r.sub.id) ?? [],
+    }));
+  },
+
+  /** 검토함 상태별 건수 (필터 탭 표시용) */
+  async countByStatus(ctx: AppContext): Promise<Record<SubstituteStatus | "all", number>> {
+    const rows = await ctx.db
+      .select({ status: substituteSubmissions.status, count: sql<number>`count(*)` })
+      .from(substituteSubmissions)
+      .groupBy(substituteSubmissions.status);
+
+    const counts: Record<SubstituteStatus | "all", number> = {
+      all: 0,
+      pending: 0,
+      approved: 0,
+      rejected: 0,
     };
-  },
-
-  /**
-   * 관리자 새 대체 과제 생성
-   */
-  async createAssignment(
-    ctx: AppContext,
-    input: SubstituteAssignmentInput
-  ): Promise<{ ok: true } | { ok: false; message: string }> {
-    const parsed = SubstituteHub.parseAssignmentInput(input);
-    if (!parsed.ok) return parsed;
-
-    await ctx.db.insert(substituteAssignments).values(parsed.values);
-    return { ok: true };
-  },
-
-  /**
-   * 관리자 대체 과제 설정 수정
-   */
-  async updateAssignment(
-    ctx: AppContext,
-    assignmentId: string,
-    input: SubstituteAssignmentInput
-  ): Promise<{ ok: true; message: string } | { ok: false; message: string }> {
-    const parsed = SubstituteHub.parseAssignmentInput(input);
-    if (!parsed.ok) return parsed;
-
-    await ctx.db
-      .update(substituteAssignments)
-      .set(parsed.values)
-      .where(eq(substituteAssignments.id, assignmentId));
-
-    return { ok: true, message: "대체 과제 설정이 성공적으로 수정되었어요." };
-  },
-
-  /**
-   * 관리자 대체 과제 삭제 — 연결된 제출물/파일 행은 cascade, R2 객체는 best-effort 정리
-   */
-  async deleteAssignment(ctx: AppContext, assignmentId: string): Promise<{ ok: true }> {
-    const files = await ctx.db
-      .select({ r2Key: substituteFiles.r2Key })
-      .from(substituteFiles)
-      .innerJoin(substituteSubmissions, eq(substituteFiles.submissionId, substituteSubmissions.id))
-      .where(eq(substituteSubmissions.assignmentId, assignmentId));
-
-    await ctx.db.delete(substituteAssignments).where(eq(substituteAssignments.id, assignmentId));
-
-    for (const f of files) {
-      if (ctx.executionCtx) {
-        ctx.executionCtx.waitUntil(ctx.env.FILES.delete(f.r2Key));
-      } else {
-        try {
-          await ctx.env.FILES.delete(f.r2Key);
-        } catch {}
-      }
+    for (const r of rows) {
+      const n = Number(r.count);
+      counts[r.status as SubstituteStatus] = n;
+      counts.all += n;
     }
-
-    return { ok: true };
+    return counts;
   },
 
   /**
-   * 심사 — 승인 시 출석 기록을 substituted로, 승인 취소 시 absent으로 되돌린다.
-   * 반려는 제출물 상태만 변경하고 출석 기록은 건드리지 않는다.
+   * 심사 — 승인 시 출석 기록을 substituted로 바꾸고 직전 상태를 approvedFrom에 스냅샷.
+   * 반려/취소 시 approvedFrom 기준으로 출석 기록을 원상복구한다 (지각이었으면 late로).
    */
   async review(
     ctx: AppContext,
@@ -558,11 +360,42 @@ export const SubstituteHub = {
       return { ok: false, message: "제출물을 찾을 수 없어요." };
     }
 
+    const restoreAttendance = async () => {
+      const restoreStatus = sub.approvedFrom ?? "absent";
+      await ctx.db
+        .insert(attendanceRecords)
+        .values({
+          sessionId: sub.sessionId,
+          userId: sub.userId,
+          status: restoreStatus,
+          source: "admin",
+          checkedAt: ctx.now,
+        })
+        .onConflictDoUpdate({
+          target: [attendanceRecords.sessionId, attendanceRecords.userId],
+          set: { status: restoreStatus, source: "admin", checkedAt: ctx.now },
+        });
+    };
+
     if (action === "approve") {
+      const [current] = await ctx.db
+        .select({ status: attendanceRecords.status })
+        .from(attendanceRecords)
+        .where(
+          and(
+            eq(attendanceRecords.sessionId, sub.sessionId),
+            eq(attendanceRecords.userId, sub.userId)
+          )
+        )
+        .limit(1);
+      const approvedFrom =
+        current?.status === "late" || current?.status === "present" ? current.status : "absent";
+
       await ctx.db
         .update(substituteSubmissions)
         .set({
           status: "approved",
+          approvedFrom,
           reviewedAt: ctx.now,
           reviewNote: note?.trim() || null,
         })
@@ -584,21 +417,9 @@ export const SubstituteHub = {
     }
 
     if (action === "reject") {
-      // 이미 승인됐던 제출물을 반려하면 출석 기록도 결석으로 되돌린다
+      // 이미 승인됐던 제출물을 반려하면 출석 기록도 원상복구한다
       if (sub.status === "approved") {
-        await ctx.db
-          .insert(attendanceRecords)
-          .values({
-            sessionId: sub.sessionId,
-            userId: sub.userId,
-            status: "absent",
-            source: "admin",
-            checkedAt: ctx.now,
-          })
-          .onConflictDoUpdate({
-            target: [attendanceRecords.sessionId, attendanceRecords.userId],
-            set: { status: "absent", source: "admin", checkedAt: ctx.now },
-          });
+        await restoreAttendance();
       }
       await ctx.db
         .update(substituteSubmissions)
@@ -619,27 +440,18 @@ export const SubstituteHub = {
       .update(substituteSubmissions)
       .set({ status: "pending", reviewedAt: null, reviewNote: null })
       .where(eq(substituteSubmissions.id, submissionId));
-    await ctx.db
-      .insert(attendanceRecords)
-      .values({
-        sessionId: sub.sessionId,
-        userId: sub.userId,
-        status: "absent",
-        source: "admin",
-        checkedAt: ctx.now,
-      })
-      .onConflictDoUpdate({
-        target: [attendanceRecords.sessionId, attendanceRecords.userId],
-        set: { status: "absent", source: "admin", checkedAt: ctx.now },
-      });
+    await restoreAttendance();
     return { ok: true };
   },
 
   /**
    * ZIP 다운로드용 제출 파일 소스 (학생별/수업별 폴더 조립은 라우트에서)
    */
-  async getZipSources(ctx: AppContext, assignmentId: string): Promise<SubstituteZipSourceRow[]> {
-    const rows = await ctx.db
+  async getZipSources(
+    ctx: AppContext,
+    filter: SubstituteReviewFilter
+  ): Promise<SubstituteZipSourceRow[]> {
+    const base = ctx.db
       .select({
         userName: users.name,
         sessionDate: attendanceSessions.sessionDate,
@@ -651,7 +463,11 @@ export const SubstituteHub = {
       .innerJoin(users, eq(substituteSubmissions.userId, users.id))
       .innerJoin(attendanceSessions, eq(substituteSubmissions.sessionId, attendanceSessions.id))
       .innerJoin(substituteFiles, eq(substituteFiles.submissionId, substituteSubmissions.id))
-      .where(eq(substituteSubmissions.assignmentId, assignmentId));
+      .$dynamic();
+
+    const rows = await (filter === "all"
+      ? base
+      : base.where(eq(substituteSubmissions.status, filter)));
 
     return rows.map((r) => ({
       userName: r.userName,

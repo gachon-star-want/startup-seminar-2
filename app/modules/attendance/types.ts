@@ -26,6 +26,7 @@ export type CheckInResult =
   | ({ ok: false } & CheckInFailure);
 
 export type StudentAttendanceRow = {
+  sessionId: string;
   dateLabel: string;
   sessionDate: string;
   isFuture: boolean;

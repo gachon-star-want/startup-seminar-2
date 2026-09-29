@@ -1,27 +1,25 @@
-import type { Route } from "./+types/admin.substitutes.$id_.zip";
-import { eq } from "drizzle-orm";
+import type { Route } from "./+types/admin.substitutes_.zip";
 import { requireAdminAppContext } from "~/lib/context.server";
-import { substituteAssignments } from "~/db/schema";
 import { SubstituteHub } from "~/modules/substitutes/index.server";
+import type { SubstituteReviewFilter } from "~/modules/substitutes/substitutes.server";
 import { buildZip, uniqueZipName } from "~/lib/zip";
 import { sanitizeFilename } from "~/modules/submissions/storage";
 
 /** R2에서 조립한 ZIP을 응답으로 감쌀 때의 총량 방어선 (Workers 메모리 한도 고려) */
 const MAX_ZIP_BYTES = 120 * 1024 * 1024;
 
-/** 대체 과제의 모든 보고서 파일을 학생/수업 폴더별로 묶어 하나의 ZIP으로 내려준다 */
-export async function loader({ request, context, params }: Route.LoaderArgs) {
+const FILTERS = ["pending", "all", "approved", "rejected"] as const;
+
+function parseFilter(raw: string | null): SubstituteReviewFilter {
+  return (FILTERS as readonly string[]).includes(raw ?? "") ? (raw as SubstituteReviewFilter) : "all";
+}
+
+/** 대체 과제 제출물 전체(또는 상태별)를 학생/수업 폴더별로 묶어 하나의 ZIP으로 내려준다 */
+export async function loader({ request, context }: Route.LoaderArgs) {
   const ctx = await requireAdminAppContext(request, context);
-  const assignmentId = params.id!;
+  const filter = parseFilter(new URL(request.url).searchParams.get("status"));
 
-  const [assignment] = await ctx.db
-    .select({ id: substituteAssignments.id, title: substituteAssignments.title })
-    .from(substituteAssignments)
-    .where(eq(substituteAssignments.id, assignmentId))
-    .limit(1);
-  if (!assignment) throw new Response("대체 과제를 찾을 수 없어요", { status: 404 });
-
-  const sources = await SubstituteHub.getZipSources(ctx, assignmentId);
+  const sources = await SubstituteHub.getZipSources(ctx, filter);
 
   const totalBytes = sources.reduce((sum, f) => sum + f.size, 0);
   if (totalBytes > MAX_ZIP_BYTES) {
@@ -50,7 +48,7 @@ export async function loader({ request, context, params }: Route.LoaderArgs) {
   }
 
   const zip = buildZip(entries);
-  const zipName = sanitizeFilename(`${assignment.title}_보고서.zip`);
+  const zipName = sanitizeFilename("대체과제_보고서.zip");
 
   return new Response(new Uint8Array(zip), {
     headers: {

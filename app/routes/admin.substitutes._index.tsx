@@ -1,13 +1,26 @@
-import { Form, Link, useActionData } from "react-router";
+import { Link, Form, useActionData, useSearchParams } from "react-router";
 import type { Route } from "./+types/admin.substitutes._index";
 import { requireAdminAppContext } from "~/lib/context.server";
 import { SubstituteHub } from "~/modules/substitutes/index.server";
+import type { SubstituteReviewFilter } from "~/modules/substitutes/substitutes.server";
+import { ATTENDANCE_LABELS } from "~/lib/constants";
 import { fmtKST } from "~/lib/time";
-import { Badge, Card, EmptyState, ErrorText, Field, SectionTitle } from "~/components/ui";
+import { AttendanceBadge, Badge, Card, EmptyState, ErrorText, PageHeader, formatBytes } from "~/components/ui";
+
+const FILTERS = ["pending", "all", "approved", "rejected"] as const;
+
+function parseFilter(raw: string | null): SubstituteReviewFilter {
+  return (FILTERS as readonly string[]).includes(raw ?? "") ? (raw as SubstituteReviewFilter) : "pending";
+}
 
 export async function loader({ request, context }: Route.LoaderArgs) {
   const ctx = await requireAdminAppContext(request, context);
-  return { assignments: await SubstituteHub.listForAdmin(ctx) };
+  const filter = parseFilter(new URL(request.url).searchParams.get("status"));
+  const [rows, counts] = await Promise.all([
+    SubstituteHub.listForAdminReview(ctx, filter),
+    SubstituteHub.countByStatus(ctx),
+  ]);
+  return { rows, counts, filter };
 }
 
 export async function action({ request, context }: Route.ActionArgs) {
@@ -15,120 +28,136 @@ export async function action({ request, context }: Route.ActionArgs) {
   const form = await request.formData();
   const intent = String(form.get("intent") ?? "");
 
-  if (intent === "create") {
-    const result = await SubstituteHub.createAssignment(ctx, {
-      title: String(form.get("title") ?? ""),
-      description: String(form.get("description") ?? ""),
-      opensAtRaw: String(form.get("opensAt") ?? ""),
-      closesAtRaw: String(form.get("closesAt") ?? ""),
-    });
-    if (!result.ok) return { error: result.message };
-    return { error: undefined };
-  }
-
-  if (intent === "delete") {
-    await SubstituteHub.deleteAssignment(ctx, String(form.get("assignmentId") ?? ""));
+  if (intent === "review") {
+    const reviewAction = String(form.get("reviewAction") ?? "");
+    if (reviewAction === "approve" || reviewAction === "reject" || reviewAction === "revoke") {
+      const res = await SubstituteHub.review(
+        ctx,
+        String(form.get("submissionId") ?? ""),
+        reviewAction,
+        String(form.get("note") ?? "")
+      );
+      if (!res.ok) return { error: res.message };
+    }
     return { error: undefined };
   }
 
   return { error: "알 수 없는 요청이에요." };
 }
 
-const phaseTone = { scheduled: "gray", open: "green", closed: "indigo" } as const;
-const phaseLabel = { scheduled: "제출 예정", open: "제출 중", closed: "마감" } as const;
+const subStatusBadge = {
+  pending: <Badge tone="gray">대기중</Badge>,
+  approved: <Badge tone="green">승인</Badge>,
+  rejected: <Badge tone="red">반려</Badge>,
+} as const;
+
+const filterLabels = { all: "전체", pending: "대기중", approved: "승인", rejected: "반려" } as const;
+
+const fmtKstDT = (iso: string) =>
+  fmtKST(new Date(iso), { month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" });
 
 export default function AdminSubstitutesRoute({ loaderData }: Route.ComponentProps) {
+  const { rows, counts, filter } = loaderData;
   const actionData = useActionData<typeof action>();
+  const [searchParams] = useSearchParams();
 
   return (
     <div className="stack-xl">
-      <Card>
-        <SectionTitle>출석 대체 과제 만들기</SectionTitle>
-        <p className="small muted help-text">
-          결석한 학생이 보고서를 제출해 <strong>대체출석</strong>으로 만회할 수 있는 과제를 만들어요.
-          학생은 본인의 결석 수업을 선택해 제출하고, 승인하면 그 수업의 출석 기록이 결석 → 대체출석으로
-          바뀌어요.
-        </p>
-        <Form method="post">
-          <input type="hidden" name="intent" value="create" />
-          <div className="grid-2">
-            <Field label="과제 제목" htmlFor="sub-title">
-              <input
-                id="sub-title"
-                name="title"
-                className="input"
-                placeholder="예: 중간 결석 대체 보고서"
-                required
-              />
-            </Field>
-            <div className="grid-2">
-              <Field label="제출 시작 (KST)" htmlFor="sub-opens">
-                <input id="sub-opens" name="opensAt" type="datetime-local" className="input num" required />
-              </Field>
-              <Field label="제출 마감 (KST)" htmlFor="sub-closes">
-                <input id="sub-closes" name="closesAt" type="datetime-local" className="input num" required />
-              </Field>
-            </div>
-          </div>
-          <Field label="안내 (보고서 주제·분량 등)" htmlFor="sub-desc">
-            <textarea
-              id="sub-desc"
-              name="description"
-              rows={2}
-              className="input"
-              placeholder="예: 결석한 수업의 주요 내용을 요약하고 배운 점을 2페이지 분량으로 작성해 주세요."
-            />
-          </Field>
-          <ErrorText>{actionData?.error}</ErrorText>
-          <button type="submit" className="btn btn--primary mt-4">
-            과제 만들기
-          </button>
-        </Form>
-      </Card>
+      <PageHeader
+        title="대체 과제 검토"
+        sub="지각/결석한 수업에 학생이 제출한 보고서를 확인하고 승인하면 그 날짜가 대체출석으로 바뀌어요."
+        right={
+          <Link to={`/admin/substitutes/zip?status=${filter}`} prefetch="intent" className="btn btn--ghost btn--sm">
+            📦 ZIP 다운로드
+          </Link>
+        }
+      />
 
-      {loaderData.assignments.length === 0 ? (
-        <EmptyState>만들어진 출석 대체 과제가 아직 없어요.</EmptyState>
+      <div className="cluster">
+        {FILTERS.map((f) => (
+          <Link
+            key={f}
+            to={`/admin/substitutes?status=${f}`}
+            prefetch="intent"
+            className={`badge ${filter === f ? "badge--indigo" : "badge--gray"}`}
+          >
+            {filterLabels[f]} {counts[f]}
+          </Link>
+        ))}
+      </div>
+
+      <ErrorText>{actionData?.error}</ErrorText>
+
+      {rows.length === 0 ? (
+        <EmptyState>
+          {filter === "pending" ? "검토 대기 중인 제출물이 없어요." : "제출된 대체 과제가 없어요."}
+        </EmptyState>
       ) : (
         <div className="stack-md">
-          <h2 className="section-label">과제 목록</h2>
-          {loaderData.assignments.map((a) => (
-            <Card key={a.id}>
+          {rows.map((s) => (
+            <Card key={s.id}>
               <div className="cluster cluster--between">
-                <div className="minw-0">
-                  <div className="cluster">
-                    <Link to={`/admin/substitutes/${a.id}`} prefetch="intent" className="link-title" title={a.title}>
-                      {a.title}
-                    </Link>
-                    <Badge tone={phaseTone[a.phase]}>{phaseLabel[a.phase]}</Badge>
-                  </div>
-                  <p className="small faint num" style={{ marginTop: "0.25rem" }}>
-                    제출 {fmtKST(new Date(a.opensAt), { month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" })}
-                    {" ~ "}
-                    {fmtKST(new Date(a.closesAt), { month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" })}
-                    {" · 보고서 "}
-                    {a.submissionCount}건 (승인 {a.approvedCount}건)
-                  </p>
+                <div className="cluster minw-0">
+                  <span className="num" style={{ fontWeight: 700 }}>{s.userName}</span>
+                  <span className="badge badge--gray num">{s.dateLabel}</span>
+                  {s.attendanceStatus ? (
+                    <AttendanceBadge status={s.attendanceStatus} labels={ATTENDANCE_LABELS} />
+                  ) : null}
+                  {subStatusBadge[s.status]}
                 </div>
-                <div className="cluster cluster--col">
-                  <Link to={`/admin/substitutes/${a.id}`} prefetch="intent" className="card__link">
-                    제출물 확인 →
-                  </Link>
-                  <Form
-                    method="post"
-                    onSubmit={(e) => {
-                      if (!confirm("이 대체 과제와 그 안의 모든 보고서가 삭제됩니다. 계속할까요?")) {
-                        e.preventDefault();
-                      }
-                    }}
-                  >
-                    <input type="hidden" name="intent" value="delete" />
-                    <input type="hidden" name="assignmentId" value={a.id} />
-                    <button type="submit" className="btn btn--danger btn--sm">
-                      삭제
-                    </button>
-                  </Form>
-                </div>
+                <span className="faint small num">{fmtKstDT(s.submittedAt)}</span>
               </div>
+
+              {s.content ? (
+                <p className="small muted" style={{ whiteSpace: "pre-wrap" }}>{s.content}</p>
+              ) : null}
+              {s.link ? (
+                <p className="small">
+                  🔗{" "}
+                  <a href={s.link} target="_blank" rel="noreferrer" className="item-link">
+                    {s.link}
+                  </a>
+                </p>
+              ) : null}
+              {s.files.length > 0 && (
+                <p className="small">
+                  📎{" "}
+                  {s.files.map((f, i) => (
+                    <span key={f.id}>
+                      {i > 0 ? ", " : ""}
+                      <a href={`/admin/substitute-files/${f.id}`} className="item-link">
+                        {f.filename}
+                      </a>{" "}
+                      <span className="faint">({formatBytes(f.size)})</span>
+                    </span>
+                  ))}
+                </p>
+              )}
+              {s.reviewNote ? (
+                <p className="notice notice--neutral small">메모: {s.reviewNote}</p>
+              ) : null}
+
+              <Form method="post" className="cluster mt-3">
+                <input type="hidden" name="intent" value="review" />
+                <input type="hidden" name="submissionId" value={s.id} />
+                <input name="note" className="input" style={{ maxWidth: "22rem" }} placeholder="교수 메모 (선택)" />
+                {s.status === "approved" ? (
+                  <button type="submit" name="reviewAction" value="revoke" className="btn btn--warn btn--sm">
+                    승인 취소
+                  </button>
+                ) : (
+                  <>
+                    <button type="submit" name="reviewAction" value="approve" className="btn btn--primary btn--sm">
+                      승인
+                    </button>
+                    {s.status === "pending" && (
+                      <button type="submit" name="reviewAction" value="reject" className="btn btn--danger btn--sm">
+                        반려
+                      </button>
+                    )}
+                  </>
+                )}
+              </Form>
             </Card>
           ))}
         </div>

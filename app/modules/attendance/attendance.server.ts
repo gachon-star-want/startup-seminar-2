@@ -159,6 +159,7 @@ export const AttendanceDesk = {
       const status = resolveAttendanceStatus(s, record?.status, ctx.now);
 
       return {
+        sessionId: s.id,
         dateLabel: ymdLabel(s.sessionDate),
         sessionDate: s.sessionDate,
         isFuture: s.sessionDate > today,

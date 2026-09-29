@@ -1,0 +1,1 @@
+ALTER TABLE `substitute_submissions` ADD `approved_from` text;
