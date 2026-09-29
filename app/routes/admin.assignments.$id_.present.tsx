@@ -7,8 +7,9 @@ import { SubmissionHub } from "~/modules/submissions/index.server";
 import { IconArrowLeft } from "~/components/icons";
 import { Card, EmptyState, formatBytes } from "~/components/ui";
 
-const PdfStage = lazy(() => import("~/components/present/PdfStage"));
-const PptxStage = lazy(() => import("~/components/present/PptxStage"));
+// .client 전용 모듈 — SSR 빌드에서는 export가 undefined로 교체되므로 서버에서 렌더하지 않는다(mounted 가드)
+const PdfStage = lazy(() => import("~/components/present/PdfStage.client"));
+const PptxStage = lazy(() => import("~/components/present/PptxStage.client"));
 
 type PresentFile = { id: string; filename: string; mime?: string | null; size: number };
 
@@ -60,6 +61,9 @@ export default function PresentRoute({ loaderData }: Route.ComponentProps) {
   const [presenting, setPresenting] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [box, setBox] = useState({ w: 960, h: 540 }); // 스테이지 크기
+  const [mounted, setMounted] = useState(false); // PDF·PPTX 스테이지는 클라이언트 전용
+
+  useEffect(() => setMounted(true), []);
 
   const overlayRef = useRef<HTMLDivElement>(null);
   const previewStageRef = useRef<HTMLDivElement>(null);
@@ -289,6 +293,7 @@ export default function PresentRoute({ loaderData }: Route.ComponentProps) {
     const kind = classify(s.file);
     switch (kind) {
       case "pdf":
+        if (!mounted) return <p className="present-loading">불러오는 중…</p>;
         return (
           <PdfStage
             key={s.file.id}
@@ -300,6 +305,7 @@ export default function PresentRoute({ loaderData }: Route.ComponentProps) {
           />
         );
       case "pptx":
+        if (!mounted) return <p className="present-loading">불러오는 중…</p>;
         return (
           <PptxStage
             key={s.file.id}

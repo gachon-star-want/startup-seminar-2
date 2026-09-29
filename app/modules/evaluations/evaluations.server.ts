@@ -1,4 +1,5 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import type { BatchItem } from "drizzle-orm/batch";
 import {
   assignments,
   presentationEvaluations,
@@ -369,67 +370,88 @@ export const EvaluationHub = {
       return { ok: false, message: "별점을 하나 이상 골라 저장해 주세요." };
     }
 
-    // 저장 — 팀 단위 평가 upsert
-    for (const p of plans) {
-      const [existing] = await ctx.db
-        .select({ id: presentationEvaluations.id })
+    // 저장 — 팀·팀원 평가 upsert. D1 왕복이 많아지면 무료 플랜 CPU 예산을 태우므로
+    // 기존 행을 한 번에 읽고 전부 batch 한 번으로 적재한다.
+    const [existingTeamRows, existingMemberRows] = await Promise.all([
+      ctx.db
+        .select({ id: presentationEvaluations.id, teamId: presentationEvaluations.teamId })
         .from(presentationEvaluations)
         .where(
           and(
             eq(presentationEvaluations.sessionId, sessionId),
-            eq(presentationEvaluations.teamId, p.teamId),
-            eq(presentationEvaluations.evaluatorId, ctx.user.id)
+            eq(presentationEvaluations.evaluatorId, ctx.user.id),
+            inArray(presentationEvaluations.teamId, teamIdList)
           )
-        )
-        .limit(1);
+        ),
+      ctx.db
+        .select({
+          id: presentationMemberEvaluations.id,
+          teamId: presentationMemberEvaluations.teamId,
+          targetUserId: presentationMemberEvaluations.targetUserId,
+        })
+        .from(presentationMemberEvaluations)
+        .where(
+          and(
+            eq(presentationMemberEvaluations.sessionId, sessionId),
+            eq(presentationMemberEvaluations.evaluatorId, ctx.user.id),
+            inArray(presentationMemberEvaluations.teamId, teamIdList)
+          )
+        ),
+    ]);
+    const teamEvalId = new Map(existingTeamRows.map((r) => [r.teamId, r.id]));
+    const memberEvalId = new Map(
+      existingMemberRows.map((r) => [`${r.teamId}:${r.targetUserId}`, r.id])
+    );
 
-      if (existing) {
-        await ctx.db
-          .update(presentationEvaluations)
-          .set({ submissionId: p.submissionId, starScore: p.star, comment: p.comment, updatedAt: ctx.now })
-          .where(eq(presentationEvaluations.id, existing.id));
+    const statements: BatchItem<"sqlite">[] = [];
+    for (const p of plans) {
+      // 팀 단위 평가 upsert
+      const existingId = teamEvalId.get(p.teamId);
+      if (existingId) {
+        statements.push(
+          ctx.db
+            .update(presentationEvaluations)
+            .set({ submissionId: p.submissionId, starScore: p.star, comment: p.comment, updatedAt: ctx.now })
+            .where(eq(presentationEvaluations.id, existingId))
+        );
       } else {
-        await ctx.db.insert(presentationEvaluations).values({
-          sessionId,
-          teamId: p.teamId,
-          submissionId: p.submissionId,
-          evaluatorId: ctx.user.id,
-          starScore: p.star,
-          comment: p.comment,
-        });
+        statements.push(
+          ctx.db.insert(presentationEvaluations).values({
+            sessionId,
+            teamId: p.teamId,
+            submissionId: p.submissionId,
+            evaluatorId: ctx.user.id,
+            starScore: p.star,
+            comment: p.comment,
+          })
+        );
       }
 
       // 팀원 개별 평가 upsert (별점만)
       for (const m of p.members) {
-        const [prev] = await ctx.db
-          .select({ id: presentationMemberEvaluations.id })
-          .from(presentationMemberEvaluations)
-          .where(
-            and(
-              eq(presentationMemberEvaluations.sessionId, sessionId),
-              eq(presentationMemberEvaluations.teamId, p.teamId),
-              eq(presentationMemberEvaluations.evaluatorId, ctx.user.id),
-              eq(presentationMemberEvaluations.targetUserId, m.userId)
-            )
-          )
-          .limit(1);
-
-        if (prev) {
-          await ctx.db
-            .update(presentationMemberEvaluations)
-            .set({ starScore: m.star, updatedAt: ctx.now })
-            .where(eq(presentationMemberEvaluations.id, prev.id));
+        const prevId = memberEvalId.get(`${p.teamId}:${m.userId}`);
+        if (prevId) {
+          statements.push(
+            ctx.db
+              .update(presentationMemberEvaluations)
+              .set({ starScore: m.star, updatedAt: ctx.now })
+              .where(eq(presentationMemberEvaluations.id, prevId))
+          );
         } else {
-          await ctx.db.insert(presentationMemberEvaluations).values({
-            sessionId,
-            teamId: p.teamId,
-            evaluatorId: ctx.user.id,
-            targetUserId: m.userId,
-            starScore: m.star,
-          });
+          statements.push(
+            ctx.db.insert(presentationMemberEvaluations).values({
+              sessionId,
+              teamId: p.teamId,
+              evaluatorId: ctx.user.id,
+              targetUserId: m.userId,
+              starScore: m.star,
+            })
+          );
         }
       }
     }
+    // plans.length ≥ 1이므로 statements는 항상 비어 있지 않다 (drizzle batch는 non-empty 튜플을 요구)
+    await ctx.db.batch(statements as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]]);
 
     return {
       ok: true,
