@@ -103,7 +103,7 @@ function StarRating({
   );
 }
 
-/** 300바이트 카운터가 붙은 코멘트 박스 */
+/** 코멘트 바이트 카운터가 붙은 코멘트 박스 */
 function CommentBox({
   id,
   name,

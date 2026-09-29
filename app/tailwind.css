@@ -1540,6 +1540,7 @@ select.input {
 .cell-btn[data-status="present"] { background: var(--success-soft); color: var(--success); }
 .cell-btn[data-status="late"] { background: var(--warning-soft); color: var(--warning); }
 .cell-btn[data-status="absent"] { background: var(--danger-soft); color: var(--danger); }
+.cell-btn[data-status="substituted"] { background: var(--primary-soft); color: var(--primary); }
 .cell-btn[data-status="none"] { background: var(--surface-3); color: var(--text-3); }
 
 .cell-btn.is-pending {

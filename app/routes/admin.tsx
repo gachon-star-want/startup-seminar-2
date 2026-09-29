@@ -22,6 +22,7 @@ export async function action({ request }: Route.ActionArgs) {
 const tabs = [
   { to: "/admin", label: "개요", end: true },
   { to: "/admin/attendance", label: "출석 관리", end: false },
+  { to: "/admin/substitutes", label: "대체 과제", end: false },
   { to: "/admin/assignments", label: "과제 관리", end: false },
   { to: "/admin/evaluations", label: "발표 평가", end: false },
 ];

@@ -30,7 +30,7 @@ function toKstDatetimeLocal(d: Date): string {
 
 const textEncoder = new TextEncoder();
 
-/** 코멘트를 300바이트로 제한 — 초과분은 잘라내지 않고 거절한다 */
+/** 코멘트를 MAX_EVAL_COMMENT_BYTES(2500)바이트로 제한 — 초과분은 잘라내지 않고 거절한다 */
 function validateComment(raw: string): { ok: true; value: string | null } | { ok: false } {
   const trimmed = raw.trim();
   if (!trimmed) return { ok: true, value: null };

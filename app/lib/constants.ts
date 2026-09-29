@@ -37,6 +37,7 @@ export const ATTENDANCE_LABELS: Record<string, string> = {
   present: "출석",
   late: "지각",
   absent: "결석",
+  substituted: "대체출석",
 };
 
 /** 파일 업로드 제한 */
@@ -45,4 +46,4 @@ export const MAX_FILES_PER_SUBMISSION = 10;
 
 
 /** 발표 평가 코멘트 바이트 제한 (UTF-8) */
-export const MAX_EVAL_COMMENT_BYTES = 300;
+export const MAX_EVAL_COMMENT_BYTES = 2500;

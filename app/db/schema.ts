@@ -87,7 +87,7 @@ export const attendanceRecords = sqliteTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    // present | late | absent
+    // present | late | absent | substituted (대체 과제 승인)
     status: varchar("status", 16).notNull(),
     // self | admin
     source: varchar("source", 16).notNull().default("self"),
@@ -133,6 +133,60 @@ export const submissionFiles = sqliteTable("submission_files", {
   createdAt: timestamp("created_at").$defaultFn(now).notNull(),
 });
 
+/** 출석 대체 과제 — 결석 만회용 보고서 과제 (세션에 묶이지 않고 학생이 대상 결석을 선택) */
+export const substituteAssignments = sqliteTable("substitute_assignments", {
+  id: uuid("id").$defaultFn(randomId).primaryKey(),
+  title: varchar("title", 200).notNull(),
+  description: text("description"),
+  opensAt: timestamp("opens_at").notNull(), // 제출 시작
+  closesAt: timestamp("closes_at").notNull(), // 제출 마감
+  createdAt: timestamp("created_at").$defaultFn(now).notNull(),
+});
+
+/** 출석 대체 과제 제출 — (과제, 학생, 대상 출석 세션)당 1회. 승인 시 해당 출석 기록이 substituted로 변경 */
+export const substituteSubmissions = sqliteTable(
+  "substitute_submissions",
+  {
+    id: uuid("id").$defaultFn(randomId).primaryKey(),
+    assignmentId: uuid("assignment_id")
+      .notNull()
+      .references(() => substituteAssignments.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    sessionId: uuid("session_id")
+      .notNull()
+      .references(() => attendanceSessions.id, { onDelete: "cascade" }),
+    content: text("content"),
+    link: varchar("link", 1000),
+    // pending | approved | rejected
+    status: varchar("status", 16).notNull().default("pending"),
+    reviewNote: varchar("review_note", 500),
+    submittedAt: timestamp("submitted_at").$defaultFn(now).notNull(),
+    reviewedAt: timestamp("reviewed_at"),
+    updatedAt: timestamp("updated_at").$defaultFn(now).notNull(),
+  },
+  (t) => [
+    uniqueIndex("substitute_submissions_assignment_user_session_key").on(
+      t.assignmentId,
+      t.userId,
+      t.sessionId
+    ),
+  ],
+);
+
+export const substituteFiles = sqliteTable("substitute_files", {
+  id: uuid("id").$defaultFn(randomId).primaryKey(),
+  submissionId: uuid("submission_id")
+    .notNull()
+    .references(() => substituteSubmissions.id, { onDelete: "cascade" }),
+  filename: varchar("filename", 300).notNull(),
+  r2Key: varchar("r2_key", 500).notNull(),
+  size: integer("size").notNull(),
+  mime: varchar("mime", 200),
+  createdAt: timestamp("created_at").$defaultFn(now).notNull(),
+});
+
 /** 발표 평가 세션 — 언제, 어떤 내용의 발표가 있고 평가 창이 언제 열리는지 */
 export const presentationSessions = sqliteTable("presentation_sessions", {
   id: uuid("id").$defaultFn(randomId).primaryKey(),
@@ -167,7 +221,7 @@ export const presentationEvaluations = sqliteTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     starScore: real("star_score").notNull(), // 별 5개 만점, 0.5개 단위
-    comment: text("comment"), // 최대 300바이트 (앱에서 검증)
+    comment: text("comment"), // 최대 2500바이트 (앱에서 검증)
     createdAt: timestamp("created_at").$defaultFn(now).notNull(),
     updatedAt: timestamp("updated_at").$defaultFn(now).notNull(),
   },

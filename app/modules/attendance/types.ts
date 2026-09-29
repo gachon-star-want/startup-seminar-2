@@ -39,6 +39,7 @@ export type AttendanceSummary = {
   present: number;
   late: number;
   absent: number;
+  substituted: number;
 };
 
 export type AdminSessionItem = {

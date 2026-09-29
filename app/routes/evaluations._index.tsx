@@ -2,6 +2,7 @@ import { Link } from "react-router";
 import type { Route } from "./+types/evaluations._index";
 import { requireAppContext } from "~/lib/context.server";
 import { EvaluationHub } from "~/modules/evaluations/index.server";
+import { MAX_EVAL_COMMENT_BYTES } from "~/lib/constants";
 import { fmtKST, ymdLabel } from "~/lib/time";
 import { Badge, Card, EmptyState, PageHeader, SectionTitle } from "~/components/ui";
 
@@ -91,8 +92,9 @@ export default function EvaluationsRoute({ loaderData }: Route.ComponentProps) {
       <Card>
         <SectionTitle>평가 방법</SectionTitle>
         <p className="small muted help-text">
-          모든 팀의 발표를 대상으로, 각 팀 발표에 <strong>별점(5개 만점)</strong>과 세부 코멘트(최대
-          300바이트)를 남겨요. 우리 팀 발표도 평가 대상이에요. 또 그 팀 안에서 팀원 한 명 한 명에게
+          모든 팀의 발표를 대상으로, 각 팀 발표에 <strong>별점(5개 만점)</strong>과 세부 코멘트(최대{" "}
+          {MAX_EVAL_COMMENT_BYTES}바이트)를 남겨요. 우리 팀 발표도 평가 대상이에요. 또 그 팀 안에서
+          팀원 한 명 한 명에게
           개별 별점과 코멘트를 줄 수 있어요. 평가는 관리자가 설정한 기간 안에만 제출할 수 있고,
           기간 안이라면 몇 번이고 수정할 수 있어요.
         </p>

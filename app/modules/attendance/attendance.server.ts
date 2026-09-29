@@ -174,6 +174,7 @@ export const AttendanceDesk = {
       present: counted.filter((r) => r.status === "present").length,
       late: counted.filter((r) => r.status === "late").length,
       absent: counted.filter((r) => r.status === "absent").length,
+      substituted: counted.filter((r) => r.status === "substituted").length,
     };
 
     return { rows, summary, isProfessor };

@@ -106,7 +106,14 @@ export function AttendanceBadge({
   status: string;
   labels: Record<string, string>;
 }) {
-  const tone = status === "present" ? "green" : status === "late" ? "amber" : "red";
+  const tone =
+    status === "present"
+      ? "green"
+      : status === "late"
+        ? "amber"
+        : status === "substituted"
+          ? "indigo"
+          : "red";
   return <Badge tone={tone}>{labels[status] ?? status}</Badge>;
 }
 

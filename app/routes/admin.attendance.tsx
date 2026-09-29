@@ -47,8 +47,21 @@ export async function action({ request, context }: Route.ActionArgs) {
   return { error: "알 수 없는 요청이에요." };
 }
 
-const cellLabel: Record<string, string> = { present: "출", late: "지", absent: "결", none: "·" };
-const nextOf: Record<string, string> = { none: "present", present: "late", late: "absent", absent: "none" };
+const cellLabel: Record<string, string> = {
+  present: "출",
+  late: "지",
+  absent: "결",
+  substituted: "대",
+  none: "·",
+};
+// substituted는 대체 과제 승인으로만 생성된다. 클릭하면 none(수동 해제)으로만 순환.
+const nextOf: Record<string, string> = {
+  none: "present",
+  present: "late",
+  late: "absent",
+  absent: "none",
+  substituted: "none",
+};
 
 export default function AdminAttendanceRoute({ loaderData }: Route.ComponentProps) {
   const actionData = useActionData<typeof action>();

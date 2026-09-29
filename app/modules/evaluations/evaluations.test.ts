@@ -39,20 +39,24 @@ describe("EvaluationHub.parseStar", () => {
   });
 });
 
-describe("코멘트 300바이트 제한", () => {
-  it("should accept comments at or under the byte budget", () => {
-    // 한글 1글자 = 3바이트 → 100글자가 한계
-    const korean100 = "가".repeat(100);
-    expect(new TextEncoder().encode(korean100).length).toBe(MAX_EVAL_COMMENT_BYTES);
+describe("코멘트 바이트 제한", () => {
+  const encoder = new TextEncoder();
 
-    const ascii300 = "a".repeat(300);
-    expect(new TextEncoder().encode(ascii300).length).toBe(MAX_EVAL_COMMENT_BYTES);
+  it("should accept comments at or under the byte budget", () => {
+    const asciiAtLimit = "a".repeat(MAX_EVAL_COMMENT_BYTES);
+    expect(encoder.encode(asciiAtLimit).length).toBe(MAX_EVAL_COMMENT_BYTES);
+
+    // 한글 1글자 = 3바이트 → floor(MAX/3) 글자는 예산 안
+    const koreanAtLimit = "가".repeat(Math.floor(MAX_EVAL_COMMENT_BYTES / 3));
+    expect(encoder.encode(koreanAtLimit).length).toBeLessThanOrEqual(MAX_EVAL_COMMENT_BYTES);
   });
 
   it("should reject comments over the byte budget", () => {
-    const korean101 = "가".repeat(101);
-    expect(new TextEncoder().encode(korean101).length).toBe(MAX_EVAL_COMMENT_BYTES + 3);
-    expect(new TextEncoder().encode("a".repeat(301)).length).toBe(MAX_EVAL_COMMENT_BYTES + 1);
+    const asciiOver = "a".repeat(MAX_EVAL_COMMENT_BYTES + 1);
+    expect(encoder.encode(asciiOver).length).toBe(MAX_EVAL_COMMENT_BYTES + 1);
+
+    const koreanOver = "가".repeat(Math.floor(MAX_EVAL_COMMENT_BYTES / 3) + 1);
+    expect(encoder.encode(koreanOver).length).toBeGreaterThan(MAX_EVAL_COMMENT_BYTES);
   });
 });
 
