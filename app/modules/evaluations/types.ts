@@ -77,7 +77,22 @@ export type TargetStatItem = {
   label: string;
   presenter: string;
   evaluatorCount: number;
+  /** 팀 단위 별점 합계 */
+  totalStar: number;
   avgStar: number;
+};
+
+/** 팀×평가자 매트릭스 — 셀 값은 scores에서 `${userId}:${teamId}` 키로 조회 */
+export type EvaluationMatrix = {
+  /** 평가자별 진행 정보 (가나다순) */
+  evaluators: { userId: string; name: string; doneCount: number }[];
+  scores: Record<string, number>;
+};
+
+export type TeamCommentGroup = {
+  teamId: string;
+  teamLabel: string;
+  items: { evaluator: string; comment: string; evaluatedAt: string }[];
 };
 
 export type MemberStatItem = {
@@ -114,6 +129,8 @@ export type AdminSessionDetail = {
   targets: TargetStatItem[];
   memberStats: MemberStatItem[];
   evaluators: EvaluatorProgressItem[];
+  matrix: EvaluationMatrix;
+  commentGroups: TeamCommentGroup[];
   rows: EvaluationResultRow[];
   totalEvaluationCount: number;
 };

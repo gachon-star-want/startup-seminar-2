@@ -22,6 +22,7 @@ import {
   type EvaluationResultRow,
   type StudentSessionListItem,
   type StudentSessionView,
+  type TeamCommentGroup,
 } from "./types";
 
 function toKstDatetimeLocal(d: Date): string {
@@ -616,6 +617,7 @@ export const EvaluationHub = {
           label: `${team.name} 팀`,
           presenter: roster[0] ?? "—",
           evaluatorCount: n,
+          totalStar: Math.round(evals.reduce((s, e) => s + e.evaluation.starScore, 0) * 10) / 10,
           avgStar: n > 0 ? Math.round((evals.reduce((s, e) => s + e.evaluation.starScore, 0) / n) * 10) / 10 : 0,
         };
       })
@@ -659,6 +661,36 @@ export const EvaluationHub = {
     for (const e of teamEvalRows) {
       evaluatorProgress.set(e.evaluatorName, (evaluatorProgress.get(e.evaluatorName) ?? 0) + 1);
     }
+
+    // 팀×평가자 매트릭스 — 관리자 결과 화면용 (행=팀, 열=평가자)
+    const evaluatorById = new Map<string, { userId: string; name: string; doneCount: number }>();
+    const scores: Record<string, number> = {};
+    for (const e of teamEvalRows) {
+      const entry = evaluatorById.get(e.evaluation.evaluatorId) ?? {
+        userId: e.evaluation.evaluatorId,
+        name: e.evaluatorName,
+        doneCount: 0,
+      };
+      entry.doneCount += 1;
+      evaluatorById.set(e.evaluation.evaluatorId, entry);
+      scores[`${e.evaluation.evaluatorId}:${e.evaluation.teamId}`] = e.evaluation.starScore;
+    }
+
+    // 코멘트를 팀별로 묶는다 (코멘트를 남긴 평가만)
+    const commentGroups: TeamCommentGroup[] = targets
+      .map((t) => ({
+        teamId: t.teamId,
+        teamLabel: t.label,
+        items: teamEvalRows
+          .filter((e) => e.evaluation.teamId === t.teamId && e.evaluation.comment)
+          .sort((a, b) => a.evaluatorName.localeCompare(b.evaluatorName, "ko"))
+          .map((e) => ({
+            evaluator: e.evaluatorName,
+            comment: e.evaluation.comment!,
+            evaluatedAt: e.evaluation.updatedAt.toISOString(),
+          })),
+      }))
+      .filter((g) => g.items.length > 0);
 
     const rows: EvaluationResultRow[] = [
       ...teamEvalRows.map((e) => ({
@@ -705,6 +737,11 @@ export const EvaluationHub = {
       evaluators: [...evaluatorProgress.entries()]
         .map(([name, doneCount]) => ({ name, doneCount }))
         .sort((a, b) => a.name.localeCompare(b.name, "ko")),
+      matrix: {
+        evaluators: [...evaluatorById.values()].sort((a, b) => a.name.localeCompare(b.name, "ko")),
+        scores,
+      },
+      commentGroups,
       rows,
       totalEvaluationCount: teamEvalRows.length + memberEvalRows.length,
     };

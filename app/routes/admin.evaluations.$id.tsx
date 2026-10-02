@@ -47,7 +47,7 @@ const phaseLabel = { scheduled: "평가 예정", open: "평가 중", closed: "�
 
 export default function AdminEvaluationDetailRoute({ loaderData }: Route.ComponentProps) {
   const actionData = useActionData<typeof action>();
-  const { session: s, targets, evaluators, totalEvaluationCount } = loaderData.detail;
+  const { session: s, targets, evaluators, matrix, commentGroups } = loaderData.detail;
   const [isEditing, setIsEditing] = useState(false);
 
   return (
@@ -205,10 +205,10 @@ export default function AdminEvaluationDetailRoute({ loaderData }: Route.Compone
         </Card>
       ) : null}
 
-      {/* 팀별 평균 */}
+      {/* 팀별 별점 현황 (팀×평가자 매트릭스) */}
       <Card className="card--flush">
         <div className="card__head card__head--flush">
-          <h2 className="card__title">📊 팀별 평균 별점 (5점 만점)</h2>
+          <h2 className="card__title">📊 팀별 별점 현황 (5점 만점)</h2>
           <p className="small faint num">
             팀 평가 {loaderData.detail.rows.filter((r) => r.kind === "team").length}건 · 개인 평가{" "}
             {loaderData.detail.rows.filter((r) => r.kind === "member").length}건 · 참여 {evaluators.length}명
@@ -218,35 +218,83 @@ export default function AdminEvaluationDetailRoute({ loaderData }: Route.Compone
           <p className="small muted" style={{ padding: "1rem 1rem 1.25rem" }}>
             평가 대상 과제가 연결되지 않았어요.
           </p>
+        ) : matrix.evaluators.length === 0 ? (
+          <EmptyState>아직 제출된 평가가 없어요.</EmptyState>
         ) : (
-          <div className="table-wrap">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>발표</th>
-                  <th>발표자</th>
-                  <th style={{ textAlign: "center" }}>평가자 수</th>
-                  <th style={{ textAlign: "center" }}>평균 별점</th>
-                </tr>
-              </thead>
-              <tbody>
-                {targets.map((t) => (
-                  <tr key={t.teamId}>
-                    <td>{t.label}</td>
-                    <td className="small muted">{t.presenter}</td>
-                    <td className="num" style={{ textAlign: "center" }}>
-                      {t.evaluatorCount}
-                    </td>
-                    <td className="num" style={{ textAlign: "center", fontWeight: 700 }}>
-                      {t.avgStar.toFixed(1)}
-                    </td>
+          <>
+            <div className="table-wrap">
+              <table className="table table--matrix">
+                <thead>
+                  <tr>
+                    <th className="mx-sticky mx-l1">발표</th>
+                    <th className="mx-sticky mx-l2">발표자</th>
+                    {matrix.evaluators.map((ev) => (
+                      <th key={ev.userId} className="mx-col">
+                        <span className="mx-col__name">{ev.name}</span>
+                        <span className="mx-col__done num">
+                          {ev.doneCount}/{targets.length}
+                        </span>
+                      </th>
+                    ))}
+                    <th className="mx-sticky mx-sum">총점</th>
+                    <th className="mx-sticky mx-avg">평균</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {targets.map((t) => (
+                    <tr key={t.teamId}>
+                      <td className="mx-sticky mx-l1">{t.label}</td>
+                      <td className="mx-sticky mx-l2 small muted">{t.presenter}</td>
+                      {matrix.evaluators.map((ev) => {
+                        const star = matrix.scores[`${ev.userId}:${t.teamId}`];
+                        return star === undefined ? (
+                          <td key={ev.userId} className="mx-cell mx-cell--empty">
+                            —
+                          </td>
+                        ) : (
+                          <td key={ev.userId} className="mx-cell num">
+                            {star.toFixed(1)}
+                          </td>
+                        );
+                      })}
+                      <td className="mx-sticky mx-sum num">{t.totalStar.toFixed(1)}</td>
+                      <td className="mx-sticky mx-avg num">{t.avgStar.toFixed(1)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="small faint matrix-legend">
+              셀 숫자 = 평가자가 준 별점 · — = 미평가 · 총점은 별점 합계
+            </p>
+          </>
         )}
       </Card>
+
+      {/* 팀별 코멘트 — 평가 원본 대신 팀 단위로 묶어 표시 (전체 원본은 XLSX) */}
+      {commentGroups.length > 0 ? (
+        <Card className="card--flush">
+          <div className="card__head card__head--flush">
+            <h2 className="card__title">💬 팀별 코멘트</h2>
+            <p className="small faint">전체 원본 데이터는 XLSX 다운로드에 포함돼요</p>
+          </div>
+          <div className="comment-groups">
+            {commentGroups.map((g) => (
+              <div key={g.teamId} className="comment-group">
+                <h3 className="comment-group__title">{g.teamLabel}</h3>
+                <ul className="bare-list">
+                  {g.items.map((c, i) => (
+                    <li key={i} className="comment-group__item">
+                      <span className="comment-group__who">{c.evaluator}</span>
+                      <p className="comment-group__body small">{c.comment}</p>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </Card>
+      ) : null}
 
       {/* 팀원별 평균 */}
       {loaderData.detail.memberStats.length > 0 ? (
@@ -282,55 +330,6 @@ export default function AdminEvaluationDetailRoute({ loaderData }: Route.Compone
           </div>
         </Card>
       ) : null}
-
-      {/* 평가자별 진행률 */}
-      {evaluators.length > 0 ? (
-        <Card>
-          <SectionTitle>👥 평가자별 완료 수</SectionTitle>
-          <p className="small muted">
-            {evaluators.map((e) => `${e.name} ${e.doneCount}건`).join(" · ")}
-          </p>
-        </Card>
-      ) : null}
-
-      {totalEvaluationCount === 0 ? (
-        <EmptyState>아직 제출된 평가가 없어요.</EmptyState>
-      ) : (
-        <Card className="card--flush">
-          <div className="card__head card__head--flush">
-            <h2 className="card__title">📝 평가 원본</h2>
-            <p className="small faint">XLSX 다운로드에 포함되는 데이터예요</p>
-          </div>
-          <div className="table-wrap">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>발표</th>
-                  <th>구분</th>
-                  <th>대상</th>
-                  <th>평가자</th>
-                  <th style={{ textAlign: "center" }}>별점</th>
-                  <th>코멘트</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loaderData.detail.rows.map((r, i) => (
-                  <tr key={`${r.evaluator}-${r.presentation}-${r.target}-${i}`}>
-                    <td>{r.presentation}</td>
-                    <td className="small muted">{r.kind === "team" ? "팀 발표" : "개인(팀원)"}</td>
-                    <td>{r.target}</td>
-                    <td>{r.evaluator}</td>
-                    <td className="num" style={{ textAlign: "center", fontWeight: 700 }}>
-                      ★{r.star}
-                    </td>
-                    <td className="small muted" style={{ whiteSpace: "pre-wrap" }}>{r.comment ?? "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      )}
     </div>
   );
 }

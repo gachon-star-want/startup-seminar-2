@@ -2177,3 +2177,156 @@ select.input {
 .eval-submit .hint {
   text-align: center;
 }
+
+/* ---------- 관리자: 팀×평가자 매트릭스 ---------- */
+.table--matrix {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.table--matrix th,
+.table--matrix td {
+  border-bottom: 1px solid var(--border);
+  text-align: center;
+}
+
+.table--matrix tbody tr:hover {
+  background: transparent;
+}
+
+.table--matrix .mx-sticky {
+  position: sticky;
+  background: var(--surface);
+  z-index: 1;
+}
+
+.table--matrix thead .mx-sticky {
+  z-index: 2;
+}
+
+/* 왼쪽 고정: 발표 · 발표자 */
+.table--matrix .mx-l1 {
+  left: 0;
+  min-width: 7.5rem;
+  max-width: 7.5rem;
+  padding-left: 1rem;
+  padding-right: 0.5rem;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.table--matrix .mx-l2 {
+  left: 7.5rem;
+  min-width: 4.5rem;
+  max-width: 4.5rem;
+  padding-left: 0.5rem;
+  padding-right: 0.75rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 오른쪽 고정: 총점 · 평균 */
+.table--matrix .mx-sum {
+  right: 4.25rem;
+  min-width: 4.5rem;
+}
+
+.table--matrix .mx-avg {
+  right: 0;
+  min-width: 4.25rem;
+}
+
+.table--matrix .mx-sum,
+.table--matrix .mx-avg {
+  border-left: 1px solid var(--border);
+  font-weight: 700;
+  box-shadow: -6px 0 8px -7px rgba(15, 23, 42, 0.35);
+}
+
+.table--matrix .mx-l1,
+.table--matrix .mx-l2 {
+  box-shadow: 6px 0 8px -7px rgba(15, 23, 42, 0.35);
+}
+
+.table--matrix thead .mx-sum,
+.table--matrix thead .mx-avg {
+  font-weight: 700;
+}
+
+.table--matrix .mx-col {
+  padding: 0.5rem 0.375rem;
+  font-weight: 600;
+}
+
+.table--matrix .mx-col__name {
+  display: block;
+}
+
+.table--matrix .mx-col__done {
+  display: block;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--text-3);
+}
+
+.table--matrix td.mx-cell {
+  padding-left: 0.375rem;
+  padding-right: 0.375rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--text-2);
+}
+
+.table--matrix td.mx-cell--empty {
+  color: var(--text-3);
+}
+
+.matrix-legend {
+  padding: 0.625rem 1rem 0.875rem;
+}
+
+/* ---------- 관리자: 팀별 코멘트 그룹 ---------- */
+.comment-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(17.5rem, 1fr));
+  gap: 0.75rem;
+  padding: 1rem 1rem 1.25rem;
+}
+
+.comment-group {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 0.875rem 1rem;
+}
+
+.comment-group__title {
+  font-size: var(--t-sm);
+  font-weight: 700;
+  margin-bottom: 0.375rem;
+}
+
+.comment-group__item {
+  padding: 0.5rem 0;
+  border-bottom: 1px dashed var(--border);
+}
+
+.comment-group__item:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.comment-group__who {
+  font-size: var(--t-xs);
+  font-weight: 700;
+  color: var(--text-3);
+}
+
+.comment-group__body {
+  margin-top: 0.125rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
