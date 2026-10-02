@@ -445,7 +445,7 @@ export const SubstituteHub = {
   },
 
   /**
-   * ZIP 다운로드용 제출 파일 소스 (학생별/수업별 폴더 조립은 라우트에서)
+   * ZIP 다운로드용 제출 파일 소스 — 파일 id(개별 서빙 URL용)와 폴더 조립 정보만 담는다
    */
   async getZipSources(
     ctx: AppContext,
@@ -453,10 +453,10 @@ export const SubstituteHub = {
   ): Promise<SubstituteZipSourceRow[]> {
     const base = ctx.db
       .select({
+        id: substituteFiles.id,
         userName: users.name,
         sessionDate: attendanceSessions.sessionDate,
         filename: substituteFiles.filename,
-        r2Key: substituteFiles.r2Key,
         size: substituteFiles.size,
       })
       .from(substituteSubmissions)
@@ -470,10 +470,10 @@ export const SubstituteHub = {
       : base.where(eq(substituteSubmissions.status, filter)));
 
     return rows.map((r) => ({
+      id: r.id,
       userName: r.userName,
       dateLabel: ymdLabel(r.sessionDate),
       filename: r.filename,
-      r2Key: r.r2Key,
       size: r.size,
     }));
   },

@@ -6,6 +6,7 @@ import type { SubstituteReviewFilter } from "~/modules/substitutes/substitutes.s
 import { ATTENDANCE_LABELS } from "~/lib/constants";
 import { fmtKST } from "~/lib/time";
 import { AttendanceBadge, Badge, Card, EmptyState, ErrorText, PageHeader, formatBytes } from "~/components/ui";
+import { ZipDownloadButton } from "~/components/ZipDownloadButton";
 
 const FILTERS = ["pending", "all", "approved", "rejected"] as const;
 
@@ -67,9 +68,12 @@ export default function AdminSubstitutesRoute({ loaderData }: Route.ComponentPro
         title="대체 과제 검토"
         sub="지각/결석한 수업에 학생이 제출한 보고서를 확인하고 승인하면 그 날짜가 대체출석으로 바뀌어요."
         right={
-          <Link to={`/admin/substitutes/zip?status=${filter}`} prefetch="intent" className="btn btn--ghost btn--sm">
-            📦 ZIP 다운로드
-          </Link>
+          <ZipDownloadButton
+            manifestUrl={`/admin/substitutes/files?status=${filter}`}
+            suggestedName="대체과제_보고서.zip"
+            label="📦 ZIP 다운로드"
+            title="대체 과제 보고서를 학생별 폴더로 묶은 ZIP으로 내려받아요 (브라우저에서 조립)"
+          />
         }
       />
 

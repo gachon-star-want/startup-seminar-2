@@ -51,9 +51,10 @@ export type AdminSubstituteRow = {
 };
 
 export type SubstituteZipSourceRow = {
+  /** 개별 파일 서빙 URL 조립용 (/admin/substitute-files/:id) */
+  id: string;
   userName: string;
   dateLabel: string;
   filename: string;
-  r2Key: string;
   size: number;
 };

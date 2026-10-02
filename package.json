@@ -19,6 +19,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "client-zip": "^2.5.1",
     "drizzle-orm": "^0.45.2",
     "isbot": "^5",
     "pptx-preview": "^1.0.7",

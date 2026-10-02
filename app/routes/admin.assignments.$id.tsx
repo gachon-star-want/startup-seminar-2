@@ -6,6 +6,7 @@ import { SubmissionHub } from "~/modules/submissions/index.server";
 import { fmtKST } from "~/lib/time";
 import { IconArrowLeft } from "~/components/icons";
 import { Badge, Card, EmptyState, ErrorText, Field, SectionTitle, formatBytes } from "~/components/ui";
+import { ZipDownloadButton } from "~/components/ZipDownloadButton";
 
 export async function loader({ request, context, params }: Route.LoaderArgs) {
   const ctx = await requireAdminAppContext(request, context);
@@ -67,13 +68,12 @@ export default function AdminAssignmentDetailRoute({ loaderData }: Route.Compone
             </button>
             {loaderData.submissions.length > 0 ? (
               <>
-                <a
-                  href={`/admin/assignments/${a.id}/zip`}
-                  className="btn btn--ghost btn--sm"
-                  title="이 과제의 모든 제출 파일을 팀별 폴더로 묶어 내려받아요"
-                >
-                  🗜️ 전체 제출 ZIP
-                </a>
+                <ZipDownloadButton
+                  manifestUrl={`/admin/assignments/${a.id}/files`}
+                  suggestedName={`${a.title}_제출물.zip`}
+                  label="🗜️ 전체 제출 ZIP"
+                  title="이 과제의 모든 제출 파일을 팀별 폴더로 묶은 ZIP으로 내려받아요 (브라우저에서 조립)"
+                />
                 <Link
                   to={`/admin/assignments/${a.id}/present`}
                   className="btn btn--primary btn--sm"
