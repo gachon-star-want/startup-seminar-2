@@ -23,6 +23,15 @@ export function buildSubmissionR2Key(
 }
 
 /**
+ * 팀 사업 서류(사업자등록증·통신판매업신고증)의 R2 저장 키를 생성합니다.
+ */
+export function buildTeamDocumentR2Key(teamId: string, filename: string): string {
+  const safeName = sanitizeFilename(filename);
+  const uuid = crypto.randomUUID();
+  return `team-documents/${teamId}/${uuid}-${safeName}`;
+}
+
+/**
  * File 객체를 V8 힙에 버퍼링(ArrayBuffer)하지 않고,
  * ReadableStream을 R2 버킷에 직접 파이프라인으로 연결하여 업로드합니다 (Zero-Heap Buffering).
  */

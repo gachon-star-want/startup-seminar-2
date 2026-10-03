@@ -170,6 +170,26 @@ export const substituteFiles = sqliteTable("substitute_files", {
   createdAt: timestamp("created_at").$defaultFn(now).notNull(),
 });
 
+/** 팀 사업 서류 — 사업자등록증('business') / 통신판매업신고증('mail_order'). 팀당 종류별 1건, 재업로드는 교체 */
+export const teamDocuments = sqliteTable(
+  "team_documents",
+  {
+    id: uuid("id").$defaultFn(randomId).primaryKey(),
+    teamId: uuid("team_id")
+      .notNull()
+      .references(() => teams.id, { onDelete: "cascade" }),
+    // business | mail_order
+    kind: varchar("kind", 16).notNull(),
+    filename: varchar("filename", 300).notNull(),
+    r2Key: varchar("r2_key", 500).notNull(),
+    size: integer("size").notNull(),
+    mime: varchar("mime", 200),
+    uploadedById: uuid("uploaded_by_id").references(() => users.id, { onDelete: "set null" }),
+    uploadedAt: timestamp("uploaded_at").$defaultFn(now).notNull(),
+  },
+  (t) => [uniqueIndex("team_documents_team_kind_key").on(t.teamId, t.kind)],
+);
+
 /** 발표 평가 세션 — 언제, 어떤 내용의 발표가 있고 평가 창이 언제 열리는지 */
 export const presentationSessions = sqliteTable("presentation_sessions", {
   id: uuid("id").$defaultFn(randomId).primaryKey(),

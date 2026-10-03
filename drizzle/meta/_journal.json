@@ -71,6 +71,13 @@
       "when": 1790697481457,
       "tag": "0009_drop_assignment_entity",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1791041974560,
+      "tag": "0010_tricky_meteorite",
+      "breakpoints": true
     }
   ]
 }

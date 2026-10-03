@@ -44,6 +44,35 @@ export const ATTENDANCE_LABELS: Record<string, string> = {
 export const MAX_FILE_MB = 100;
 export const MAX_FILES_PER_SUBMISSION = 10;
 
+/** 팀 서류(사업자등록증·통신판매업신고증) — 팀당 종류별 1건, 사진 또는 스캔 PDF */
+export const TEAM_DOC_KINDS = ["business", "mail_order"] as const;
+export type TeamDocKind = (typeof TEAM_DOC_KINDS)[number];
+
+export const TEAM_DOC_LABELS: Record<TeamDocKind, string> = {
+  business: "사업자등록증",
+  mail_order: "통신판매업신고증",
+};
+
+export const MAX_DOC_MB = 10;
+
+/** 허용 확장자 — 사진 촬영본과 스캔 PDF (svg는 스크립트 삽입 우려로 제외) */
+export const TEAM_DOC_EXTENSIONS = ["pdf", "jpg", "jpeg", "png", "webp", "heic", "heif"] as const;
+
+export function isTeamDocKind(value: string): value is TeamDocKind {
+  return (TEAM_DOC_KINDS as readonly string[]).includes(value);
+}
+
+/** 확장자 기준 화이트리스트 + 브라우저가 image/*·pdf로 알려준 경우도 허용(HEIC 등). 단 svg는 스크립트 삽입 우려로 제외 */
+export function isAllowedDocFile(filename: string, browserMime?: string | null): boolean {
+  const dot = filename.lastIndexOf(".");
+  const ext = dot >= 0 ? filename.slice(dot + 1).toLowerCase() : "";
+  if ((TEAM_DOC_EXTENSIONS as readonly string[]).includes(ext)) return true;
+  if (browserMime === "application/pdf") return true;
+  if (browserMime && browserMime.startsWith("image/") && browserMime !== "image/svg+xml")
+    return true;
+  return false;
+}
+
 
 /** 발표 평가 코멘트 바이트 제한 (UTF-8) */
 export const MAX_EVAL_COMMENT_BYTES = 2500;

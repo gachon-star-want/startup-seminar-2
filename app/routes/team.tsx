@@ -1,29 +1,38 @@
 import { useEffect, useRef, useState } from "react";
 import { data, Form, redirect, useActionData } from "react-router";
 import type { Route } from "./+types/team";
-import { TeamRoster } from "~/modules/teams/index.server";
+import { TeamDocuments, TeamRoster } from "~/modules/teams/index.server";
 import { requireAppContext } from "~/lib/context.server";
 import {
   BUSINESS_STATUS_LABELS,
   MAIL_ORDER_STATUS_LABELS,
+  MAX_DOC_MB,
   SALES_CHANNEL_ETC,
   SALES_CHANNEL_OPTIONS,
+  TEAM_DOC_KINDS,
+  TEAM_DOC_LABELS,
   matchSalesChannelOption,
+  type TeamDocKind,
 } from "~/lib/constants";
+import { fmtKST } from "~/lib/time";
 import { IconCopy } from "~/components/icons";
 import {
   Badge,
   Card,
   ErrorText,
   Field,
+  MilestoneBadge,
   PageHeader,
   SectionTitle,
+  formatBytes,
 } from "~/components/ui";
+import type { TeamDocumentItem } from "~/modules/teams/types";
 
 export async function loader({ request, context }: Route.LoaderArgs) {
   const ctx = await requireAppContext(request, context);
   const team = await TeamRoster.getMyTeam(ctx);
-  return { team };
+  const docs = team ? await TeamDocuments.listForTeam(ctx) : [];
+  return { team, docs };
 }
 
 export async function action({ request, context }: Route.ActionArgs) {
@@ -63,6 +72,21 @@ export async function action({ request, context }: Route.ActionArgs) {
       mailOrderStatus,
       memo,
     });
+    if (!res.ok) return data({ error: res.message }, { status: 400 });
+    return redirect("/team");
+  }
+
+  if (intent === "uploadDoc") {
+    const kind = String(form.get("kind") ?? "");
+    const file = form.get("file");
+    const res = await TeamDocuments.upload(ctx, kind, file instanceof File ? file : null);
+    if (!res.ok) return data({ error: res.message }, { status: 400 });
+    return redirect("/team");
+  }
+
+  if (intent === "deleteDoc") {
+    const kind = String(form.get("kind") ?? "");
+    const res = await TeamDocuments.deleteDocument(ctx, kind);
     if (!res.ok) return data({ error: res.message }, { status: 400 });
     return redirect("/team");
   }
@@ -237,6 +261,64 @@ function CopyButton({ code }: { code: string }) {
   );
 }
 
+/** 서류 1종(사업자등록증 또는 통신판매업신고증)의 제출 슬롯 */
+function DocumentSlot({ kind, doc }: { kind: TeamDocKind; doc: TeamDocumentItem | null }) {
+  const label = TEAM_DOC_LABELS[kind];
+  return (
+    <Field label={label} hint={`PDF 또는 사진(jpg·png·webp·heic) · 최대 ${MAX_DOC_MB}MB`}>
+      {doc ? (
+        <p className="small">
+          📄{" "}
+          <a href={`/team-documents/${doc.id}`} className="item-link">
+            {doc.filename}
+          </a>{" "}
+          <span className="faint num">({formatBytes(doc.size)})</span>
+          <span className="faint small num">
+            {" "}
+            · {fmtKST(doc.uploadedAt, { month: "numeric", day: "numeric" })} 제출
+          </span>
+        </p>
+      ) : (
+        <p className="small faint">아직 제출하지 않았어요.</p>
+      )}
+
+      <Form method="post" encType="multipart/form-data" className="cluster mt-2">
+        <input type="hidden" name="intent" value="uploadDoc" />
+        <input type="hidden" name="kind" value={kind} />
+        <input
+          type="file"
+          name="file"
+          required
+          accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,image/*"
+          className="input"
+          style={{ maxWidth: "22rem" }}
+        />
+        <button type="submit" className="btn btn--primary btn--sm">
+          {doc ? "교체하기" : "제출하기"}
+        </button>
+      </Form>
+
+      {doc ? (
+        <Form
+          method="post"
+          className="mt-2"
+          onSubmit={(e) => {
+            if (!confirm(`제출한 ${label}을(를) 삭제할까요?`)) {
+              e.preventDefault();
+            }
+          }}
+        >
+          <input type="hidden" name="intent" value="deleteDoc" />
+          <input type="hidden" name="kind" value={kind} />
+          <button type="submit" className="btn btn--danger btn--sm">
+            삭제
+          </button>
+        </Form>
+      ) : null}
+    </Field>
+  );
+}
+
 export default function TeamRoute({ loaderData }: Route.ComponentProps) {
   const actionData = useActionData<typeof action>();
   const team = loaderData.team;
@@ -281,6 +363,15 @@ export default function TeamRoute({ loaderData }: Route.ComponentProps) {
         </div>
       </div>
     );
+  }
+
+  const docByKind = new Map(loaderData.docs.map((d) => [d.kind, d]));
+  const missingDocs: string[] = [];
+  if (team.businessStatus === "done" && !docByKind.has("business")) {
+    missingDocs.push(TEAM_DOC_LABELS.business);
+  }
+  if (team.mailOrderStatus === "done" && !docByKind.has("mail_order")) {
+    missingDocs.push(TEAM_DOC_LABELS.mail_order);
   }
 
   return (
@@ -371,6 +462,28 @@ export default function TeamRoute({ loaderData }: Route.ComponentProps) {
             저장하기
           </button>
         </Form>
+      </Card>
+
+      {/* 사업 서류 제출 (팀원 누구나) */}
+      <Card>
+        <SectionTitle>사업 서류 제출</SectionTitle>
+        <p className="small muted">
+          사업자등록증과 통신판매업신고증을 제출해 주세요. 팀원 누구나 제출할 수 있고, 다시
+          올리면 기존 서류가 교체돼요.
+        </p>
+
+        {missingDocs.length > 0 ? (
+          <p className="notice notice--warning small">
+            ⚠️ {missingDocs.join("과 ")}을(를) 완료로 표시하셨는데 서류가 아직 제출되지
+            않았어요. 사진이나 스캔본을 올려주세요.
+          </p>
+        ) : null}
+
+        <div className="grid-2 mt-4">
+          {TEAM_DOC_KINDS.map((kind) => (
+            <DocumentSlot key={kind} kind={kind} doc={docByKind.get(kind) ?? null} />
+          ))}
+        </div>
       </Card>
     </div>
   );

@@ -25,6 +25,7 @@ const tabs = [
   { to: "/admin/substitutes", label: "대체 과제", end: false },
   { to: "/admin/assignments", label: "과제 관리", end: false },
   { to: "/admin/evaluations", label: "발표 평가", end: false },
+  { to: "/admin/documents", label: "서류 제출", end: false },
 ];
 
 export default function AdminRoute({ loaderData }: Route.ComponentProps) {
