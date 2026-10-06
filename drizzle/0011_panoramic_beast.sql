@@ -1,0 +1,1 @@
+ALTER TABLE `attendance_sessions` ADD `absent_sealed_at` integer;

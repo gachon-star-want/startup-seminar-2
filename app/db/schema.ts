@@ -71,6 +71,8 @@ export const attendanceSessions = sqliteTable(
     opensAt: timestamp("opens_at").notNull(), // 10:00 KST
     lateFrom: timestamp("late_from").notNull(), // 10:10 KST
     closesAt: timestamp("closes_at").notNull(), // 11:00 KST
+    // 미체크 결석 일괄 기록(스윕) 완료 시각 — null이면 아직 스윕 대상
+    absentSealedAt: timestamp("absent_sealed_at"),
     note: varchar("note", 200),
     createdAt: timestamp("created_at").$defaultFn(now).notNull(),
   },
@@ -89,7 +91,7 @@ export const attendanceRecords = sqliteTable(
       .references(() => users.id, { onDelete: "cascade" }),
     // present | late | absent | substituted (대체 과제 승인)
     status: varchar("status", 16).notNull(),
-    // self | admin
+    // self | admin | auto (마감 후 미체크 결석 스윕)
     source: varchar("source", 16).notNull().default("self"),
     checkedAt: timestamp("checked_at").$defaultFn(now).notNull(),
   },

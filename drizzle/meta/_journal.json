@@ -78,6 +78,13 @@
       "when": 1791041974560,
       "tag": "0010_tricky_meteorite",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1791269638084,
+      "tag": "0011_panoramic_beast",
+      "breakpoints": true
     }
   ]
 }

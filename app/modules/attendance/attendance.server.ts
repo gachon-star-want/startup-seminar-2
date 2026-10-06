@@ -1,4 +1,4 @@
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, lte } from "drizzle-orm";
 import { attendanceRecords, attendanceSessions, users } from "~/db/schema";
 import type { AdminAppContext, AppContext } from "~/lib/context.server";
 import { kstInstant, kstYMD, ymdLabel } from "~/lib/time";
@@ -21,6 +21,57 @@ import type {
  * 학생 출석체크, 출석 이력, 관리자 출석 관리 기능과 도메인 불변식을 캡슐화합니다.
  */
 export const AttendanceDesk = {
+  /**
+   * 마감된 세션의 미체크 학생을 결석으로 일괄 기록(스윕).
+   * - 세션별 1회만 실행: absentSealedAt에 완료 시각을 찍어 재실행을 막는다.
+   *   (이후 관리자가 셀을 none으로 비워도 결석이 재삽입되지 않음)
+   * - 결석 레코드는 source "auto", checkedAt은 세션 마감 시각(closesAt)으로 기록.
+   * - onConflictDoNothing이라 동시 조회·재실행에 멱등.
+   * - 실패해도 가상 결석 폴백(resolveAttendanceStatus)이 있으니 호출자의 조회를 막지 않는다.
+   */
+  async sealAbsents(ctx: Pick<AppContext, "db" | "now">): Promise<void> {
+    try {
+      const unsealed = await ctx.db
+        .select({ id: attendanceSessions.id, closesAt: attendanceSessions.closesAt })
+        .from(attendanceSessions)
+        .where(
+          and(
+            lte(attendanceSessions.closesAt, ctx.now),
+            isNull(attendanceSessions.absentSealedAt)
+          )
+        );
+      if (unsealed.length === 0) return;
+
+      const students = await ctx.db
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.role, "student"));
+
+      for (const s of unsealed) {
+        if (students.length > 0) {
+          await ctx.db
+            .insert(attendanceRecords)
+            .values(
+              students.map((u) => ({
+                sessionId: s.id,
+                userId: u.id,
+                status: "absent",
+                source: "auto",
+                checkedAt: s.closesAt,
+              }))
+            )
+            .onConflictDoNothing();
+        }
+        await ctx.db
+          .update(attendanceSessions)
+          .set({ absentSealedAt: ctx.now })
+          .where(eq(attendanceSessions.id, s.id));
+      }
+    } catch (error) {
+      console.error("sealAbsents failed:", error);
+    }
+  },
+
   /**
    * 학생 출석체크 액션 (1-Shot 원자적 체크인)
    * - 교수 면제 판정
@@ -137,6 +188,7 @@ export const AttendanceDesk = {
     isProfessor: boolean;
   }> {
     const isProfessor = ctx.user.role === "professor";
+    await AttendanceDesk.sealAbsents(ctx);
     const today = kstYMD(ctx.now);
 
     const [sessions, records] = await Promise.all([
@@ -186,6 +238,7 @@ export const AttendanceDesk = {
    * 3개 테이블 병렬 1회 왕복 후 인메모리 프로젝션으로 O(1) 맵을 조립합니다.
    */
   async getAdminBoard(ctx: AdminAppContext | AppContext): Promise<AdminAttendanceBoard> {
+    await AttendanceDesk.sealAbsents(ctx);
     const [sessions, rawUsers, records] = await Promise.all([
       ctx.db
         .select()
