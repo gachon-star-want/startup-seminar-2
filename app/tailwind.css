@@ -662,6 +662,25 @@ button {
   .stat-row--3 {
     gap: 0.75rem;
   }
+
+  /* 5개짜리: 데스크톱에서 한 줄 5열 */
+  .stat-row--5 {
+    grid-template-columns: repeat(5, 1fr);
+  }
+}
+
+/* 출석 안내 문구 + 대체과제 버튼 행 */
+.sub-cta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.sub-cta-row > p {
+  flex: 1 1 auto;
+  min-width: 18rem;
 }
 
 .stat {

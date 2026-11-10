@@ -1,4 +1,4 @@
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import type { Route } from "./+types/attendance";
 import { Form, useActionData } from "react-router";
 import { AttendanceDesk } from "~/modules/attendance/index.server";
@@ -123,11 +123,25 @@ export default function AttendanceRoute({ loaderData }: Route.ComponentProps) {
   const { rows, summary, isProfessor, mySubmissions } = loaderData;
   const actionData = useActionData<typeof action>();
   const [openSessionId, setOpenSessionId] = useState<string | null>(null);
+  const [panelOpen, setPanelOpen] = useState(false);
 
   const subBySession = new Map(mySubmissions.map((s) => [s.sessionId, s]));
 
+  /** 대체 과제 제출 가능 날짜: 마감된 지각·결석 수업 중 승인 완료가 아닌 것 */
+  const eligible = rows.filter(
+    (r) =>
+      !r.isFuture &&
+      (r.status === "late" || r.status === "absent") &&
+      subBySession.get(r.sessionId)?.status !== "approved",
+  );
+
   const toggle = (sessionId: string) =>
     setOpenSessionId((cur) => (cur === sessionId ? null : sessionId));
+
+  // 제출 성공 시 패널 닫기 (결과 안내는 표 아래 notice로 표시됨)
+  useEffect(() => {
+    if (actionData?.message) setPanelOpen(false);
+  }, [actionData]);
 
   return (
     <div className="stack-xl">
@@ -137,7 +151,7 @@ export default function AttendanceRoute({ loaderData }: Route.ComponentProps) {
         <EmptyState>교수 계정은 출석체크 대상이 아니에요. 학생들의 출석은 관리자 페이지에서 확인해 주세요.</EmptyState>
       ) : (
         <>
-          <div className="stat-row">
+          <div className="stat-row stat-row--5">
             <Stat value={summary.present} label="출석" tone="success" />
             <Stat value={summary.late} label="지각" tone="warning" />
             <Stat value={summary.substituted} label="대체출석" tone="primary" />
@@ -145,10 +159,62 @@ export default function AttendanceRoute({ loaderData }: Route.ComponentProps) {
             <Stat value={`${summary.total}회`} label="진행" />
           </div>
 
-          <p className="small muted">
-            지각하거나 결석한 수업은 날짜 옆에서 대체 과제(보고서)를 제출할 수 있어요. 교수 확인 후 승인되면{" "}
-            <strong>대체출석</strong>으로 바뀌고, 대체출석은 출석과 동일하게 인정돼요.
-          </p>
+          <div className="sub-cta-row">
+            <p className="small muted">
+              지각하거나 결석한 수업은 날짜 옆 또는 아래 <strong>대체과제</strong> 버튼에서 보고서를 제출할 수
+              있어요. 교수 확인 후 승인되면 <strong>대체출석</strong>으로 바뀌고, 대체출석은 출석과 동일하게
+              인정돼요.
+            </p>
+            <button
+              type="button"
+              className="btn btn--primary"
+              onClick={() => setPanelOpen((cur) => !cur)}
+              disabled={eligible.length === 0}
+            >
+              {panelOpen ? "닫기" : "대체과제"}
+            </button>
+          </div>
+
+          {panelOpen && eligible.length > 0 && (
+            <Card>
+              <Form method="post" encType="multipart/form-data" className="stack-sm">
+                <input type="hidden" name="intent" value="substituteSubmit" />
+                <Field label="대상 날짜" hint="지각·결석 처리된 수업만 선택할 수 있어요.">
+                  <select name="sessionId" className="input" required defaultValue="">
+                    <option value="" disabled>
+                      날짜를 선택하세요
+                    </option>
+                    {eligible.map((r) => {
+                      const sub = subBySession.get(r.sessionId);
+                      return (
+                        <option key={r.sessionId} value={r.sessionId}>
+                          {r.dateLabel} · {r.status === "late" ? "지각" : "결석"}
+                          {sub ? " · 제출됨" : ""}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </Field>
+                <Field label="보고서 내용">
+                  <textarea
+                    name="content"
+                    rows={4}
+                    className="input"
+                    placeholder="수업 내용 요약, 배운 점 등을 적어주세요"
+                  />
+                </Field>
+                <Field label="링크 (선택)">
+                  <input name="link" type="url" className="input" placeholder="https://..." />
+                </Field>
+                <Field label="파일 첨부 (선택)" hint="최대 100MB, 10개까지">
+                  <input type="file" name="files" multiple className="input" />
+                </Field>
+                <button type="submit" className="btn btn--primary">
+                  제출하기
+                </button>
+              </Form>
+            </Card>
+          )}
 
           {rows.length === 0 ? (
             <EmptyState>등록된 수업 일정이 아직 없어요.</EmptyState>
