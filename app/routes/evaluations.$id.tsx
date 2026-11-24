@@ -289,6 +289,7 @@ export default function EvaluationSessionRoute({ loaderData }: Route.ComponentPr
       ) : canEvaluate ? (
         <Form method="post" ref={formRef}>
           <input type="hidden" name="intent" value="submit" />
+          <p className="small faint">우리 팀 발표는 평가 대상에서 빠져 있어요.</p>
           <div className="stack-md">
             {targets.map((t, i) => (
               <EvaluationCard key={t.teamId} t={t} index={i} onEdit={queueDraftSave} />

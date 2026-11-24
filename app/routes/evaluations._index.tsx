@@ -93,8 +93,9 @@ export default function EvaluationsRoute({ loaderData }: Route.ComponentProps) {
         <SectionTitle>평가 방법</SectionTitle>
         <p className="small muted help-text">
           모든 팀의 발표를 대상으로, 각 팀마다 <strong>5개 항목에 1~5점</strong>씩 점수를 줘요. 점수를 고르면
-          자동으로 임시 저장되고, 모든 팀의 점수를 다 매긴 뒤 제출해요. 평가는 관리자가 설정한 기간 안에서
-          몇 번이고 고칠 수 있고, <strong>점수와 결과는 관리자만 볼 수 있어요</strong>.
+          자동으로 임시 저장되고, 모든 팀의 점수를 다 매긴 뒤 제출해요. <strong>우리 팀 발표는 평가 대상에서
+          빠져요.</strong> 평가는 관리자가 설정한 기간 안에서 몇 번이고 고칠 수 있고,{" "}
+          <strong>점수와 결과는 관리자만 볼 수 있어요</strong>.
         </p>
         <ul className="small muted help-text mt-2 bare-list">
           {EVAL_CRITERIA.map((c) => (

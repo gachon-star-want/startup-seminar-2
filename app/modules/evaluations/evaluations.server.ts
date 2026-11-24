@@ -115,11 +115,11 @@ export const EvaluationHub = {
 
   /**
    * 학생 발표 평가 목록 (세션별 진행상황 집계)
-   * targetCount는 전체 팀 수(제출물 없는 팀 포함), myCount는 내가 평가를 끝낸 팀 수.
+   * targetCount는 내가 평가할 수 있는 팀 수(전체 팀 − 내 팀), myCount는 내가 평가를 끝낸 팀 수.
    * 끝낸 평가 = 5개 항목을 모두 매겨 총점이 계산된 행(star_score > 0). 부분 입력 임시 저장은 세지 않는다.
    */
   async listSessionsForStudent(ctx: AppContext): Promise<{ sessions: StudentSessionListItem[] }> {
-    const [rows, myEvalCounts, [teamCount]] = await Promise.all([
+    const [rows, myEvalCounts, [teamCount], myTeamRows] = await Promise.all([
       ctx.db
         .select({
           session: presentationSessions,
@@ -139,7 +139,14 @@ export const EvaluationHub = {
         )
         .groupBy(presentationEvaluations.sessionId),
       ctx.db.select({ count: sql<number>`count(*)` }).from(teams),
+      ctx.db
+        .select({ teamId: teamMembers.teamId })
+        .from(teamMembers)
+        .where(eq(teamMembers.userId, ctx.user.id)),
     ]);
+
+    // 본인 팀은 평가 대상이 아니다
+    const targetCount = Math.max(0, (teamCount?.count ?? 0) - myTeamRows.length);
 
     const myMap = new Map(myEvalCounts.map((m) => [m.sessionId, m.count]));
 
@@ -154,7 +161,7 @@ export const EvaluationHub = {
         opensAt: r.session.opensAt.toISOString(),
         closesAt: r.session.closesAt.toISOString(),
         phase: phaseOf(r.session.opensAt, r.session.closesAt, ctx.now),
-        targetCount: teamCount?.count ?? 0,
+        targetCount,
         myCount: myMap.get(r.session.id) ?? 0,
       })),
     };
@@ -188,7 +195,7 @@ export const EvaluationHub = {
     const phase = phaseOf(session.opensAt, session.closesAt, ctx.now);
     const isOpen = phase === "open";
 
-    const [teamRows, myEvals] = await Promise.all([
+    const [teamRows, myEvals, myTeamRows] = await Promise.all([
       ctx.db.select({ id: teams.id, name: teams.name }).from(teams),
       ctx.db
         .select({
@@ -207,9 +214,16 @@ export const EvaluationHub = {
             eq(presentationEvaluations.evaluatorId, ctx.user.id)
           )
         ),
+      ctx.db
+        .select({ teamId: teamMembers.teamId })
+        .from(teamMembers)
+        .where(eq(teamMembers.userId, ctx.user.id)),
     ]);
 
-    const teamIds = teamRows.map((t) => t.id);
+    // 본인 팀은 평가 대상에서 제외 — 자기 발표에 점수를 줄 수 없다
+    const myTeamIds = new Set(myTeamRows.map((r) => r.teamId));
+    const targetTeams = teamRows.filter((t) => !myTeamIds.has(t.id));
+    const teamIds = targetTeams.map((t) => t.id);
 
     // 팀원 명단(발표자 표시용) + 팀별 대표 제출물(최신 1건)을 병렬로 일괄 조회
     const [memberRows, submissionRows] = await Promise.all([
@@ -269,7 +283,7 @@ export const EvaluationHub = {
       filesBySubmission.set(f.submissionId, list);
     }
 
-    const targets = teamRows
+    const targets = targetTeams
       .map((team) => {
         const sub = latestByTeam.get(team.id) ?? null;
         const prev = myByTeam.get(team.id) ?? null;
@@ -346,11 +360,23 @@ export const EvaluationHub = {
     }
 
     // 평가 대상 팀만 통과 — 대상 밖의 teamId는 조용히 무시
-    const targetRows = await ctx.db
-      .select({ id: teams.id, name: teams.name })
-      .from(teams)
-      .where(inArray(teams.id, teamIdList));
-    const targetMap = new Map(targetRows.map((r) => [r.id, `${r.name} 팀`]));
+    const [targetRows, myTeamRows] = await Promise.all([
+      ctx.db
+        .select({ id: teams.id, name: teams.name })
+        .from(teams)
+        .where(inArray(teams.id, teamIdList)),
+      ctx.db
+        .select({ teamId: teamMembers.teamId })
+        .from(teamMembers)
+        .where(eq(teamMembers.userId, ctx.user.id)),
+    ]);
+    const myTeamIds = new Set(myTeamRows.map((r) => r.teamId));
+    if (!draft && teamIdList.some((id) => myTeamIds.has(id))) {
+      return { ok: false, message: "우리 팀 발표는 평가할 수 없어요." };
+    }
+    const targetMap = new Map(
+      targetRows.filter((r) => !myTeamIds.has(r.id)).map((r) => [r.id, `${r.name} 팀`])
+    );
 
     // 팀별 대표 제출물(최신 1건) — 평가 기록이 어떤 발표 자료를 가리키는지 남긴다
     const latestByTeam = new Map<string, string>();
