@@ -80,3 +80,33 @@ export function mean(values: number[]): number {
   if (values.length === 0) return 0;
   return round2(values.reduce((s, v) => s + v, 0) / values.length);
 }
+
+/**
+ * 수업에서 실제로 발표한 순서(발표자 이름). 평가 화면·관리자 결과 모두 이 순서로 팀을 나열한다.
+ * 목록에 없는 팀은 뒤로 밀리고 팀명 가나다순을 따른다.
+ */
+export const PRESENTATION_ORDER = [
+  "이원영",
+  "이재빈",
+  "양민혁",
+  "이건후",
+  "박성진",
+  "원유청",
+  "강재원",
+  "김범수",
+  "송채우",
+  "김소윤",
+  "강태이",
+  "엄주원",
+  "김민성",
+] as const;
+
+/** 그 팀(팀원 이름들)의 발표 순번 — 팀원 중 한 명이라도 명단에 있으면 그 순번. 없으면 맨 뒤 */
+export function presentationRank(names: string[]): number {
+  let best = Number.POSITIVE_INFINITY;
+  for (const name of names) {
+    const i = (PRESENTATION_ORDER as readonly string[]).indexOf(name);
+    if (i >= 0 && i < best) best = i;
+  }
+  return best;
+}

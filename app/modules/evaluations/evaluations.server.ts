@@ -19,6 +19,7 @@ import {
   EVAL_CRITERIA,
   criterionField,
   mean,
+  presentationRank,
   weightedTotal,
   SCORE_MAX,
   SCORE_MIN,
@@ -292,7 +293,13 @@ export const EvaluationHub = {
           mine: isOpen && prev ? { scores, comment: prev.comment } : null,
         };
       })
-      .sort((a, b) => a.label.localeCompare(b.label, "ko"));
+      // 발표한 순서대로 — 순번이 같으면(명단에 없는 팀) 팀명 가나다순
+      .sort(
+        (a, b) =>
+          presentationRank(namesByTeam.get(a.teamId) ?? []) -
+            presentationRank(namesByTeam.get(b.teamId) ?? []) ||
+          a.label.localeCompare(b.label, "ko")
+      );
 
     return {
       session: {
@@ -651,7 +658,13 @@ export const EvaluationHub = {
           }),
         };
       })
-      .sort((a, b) => a.label.localeCompare(b.label, "ko"));
+      // 발표한 순서대로 — 관리자 매트릭스·순위표도 같은 순서
+      .sort(
+        (a, b) =>
+          presentationRank(membersByTeam.get(a.teamId) ?? []) -
+            presentationRank(membersByTeam.get(b.teamId) ?? []) ||
+          a.label.localeCompare(b.label, "ko")
+      );
 
     const targetByTeamId = new Map(targets.map((t) => [t.teamId, t]));
 
