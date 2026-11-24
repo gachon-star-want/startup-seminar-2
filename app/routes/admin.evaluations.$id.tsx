@@ -58,10 +58,8 @@ export default function AdminEvaluationDetailRoute({ loaderData }: Route.Compone
   const memberRowCount = loaderData.detail.rows.filter((r) => r.kind === "member").length;
   const hasResult = matrix.evaluators.length > 0;
 
-  // 최종 점수 순위 — 점수 내림차순, 같은 점수는 같은 순위. 평가자가 없는 팀은 순위 없음
-  const ranked = [...targets].sort(
-    (a, b) => b.avgStar - a.avgStar || a.label.localeCompare(b.label, "ko")
-  );
+  // 최종 점수 순위 — 점수 내림차순. 동점이면 원래 순서(=발표 순서)를 그대로 유지한다
+  const ranked = [...targets].sort((a, b) => b.avgStar - a.avgStar);
 
   return (
     <div className="stack-xl">
