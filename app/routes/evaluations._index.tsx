@@ -2,7 +2,7 @@ import { Link } from "react-router";
 import type { Route } from "./+types/evaluations._index";
 import { requireAppContext } from "~/lib/context.server";
 import { EvaluationHub } from "~/modules/evaluations/index.server";
-import { MAX_EVAL_COMMENT_BYTES } from "~/lib/constants";
+import { EVAL_CRITERIA } from "~/modules/evaluations/rubric";
 import { fmtKST, ymdLabel } from "~/lib/time";
 import { Badge, Card, EmptyState, PageHeader, SectionTitle } from "~/components/ui";
 
@@ -25,7 +25,7 @@ export default function EvaluationsRoute({ loaderData }: Route.ComponentProps) {
     <div className="stack-xl">
       <PageHeader
         title="발표 평가"
-        sub="동기들의 발표를 보고 점수와 코멘트를 남겨주세요"
+        sub="동기들의 발표에 5개 항목으로 점수를 남겨주세요"
       />
 
       {sessions.length === 0 ? (
@@ -92,12 +92,17 @@ export default function EvaluationsRoute({ loaderData }: Route.ComponentProps) {
       <Card>
         <SectionTitle>평가 방법</SectionTitle>
         <p className="small muted help-text">
-          모든 팀의 발표를 대상으로, 각 팀 발표에 <strong>별점(5개 만점)</strong>과 세부 코멘트(최대{" "}
-          {MAX_EVAL_COMMENT_BYTES}바이트)를 남겨요. 우리 팀 발표도 평가 대상이에요. 또 그 팀 안에서
-          팀원 한 명 한 명에게
-          개별 별점과 코멘트를 줄 수 있어요. 평가는 관리자가 설정한 기간 안에만 제출할 수 있고,
-          기간 안이라면 몇 번이고 수정할 수 있어요.
+          모든 팀의 발표를 대상으로, 각 팀마다 <strong>5개 항목에 1~5점</strong>씩 점수를 줘요. 점수를 고르면
+          자동으로 임시 저장되고, 모든 팀의 점수를 다 매긴 뒤 제출해요. 평가는 관리자가 설정한 기간 안에서
+          몇 번이고 고칠 수 있고, <strong>점수와 결과는 관리자만 볼 수 있어요</strong>.
         </p>
+        <ul className="small muted help-text mt-2 bare-list">
+          {EVAL_CRITERIA.map((c) => (
+            <li key={c.key} className="num">
+              · {c.label} ({c.weight})
+            </li>
+          ))}
+        </ul>
       </Card>
     </div>
   );

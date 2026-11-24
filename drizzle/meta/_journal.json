@@ -85,6 +85,13 @@
       "when": 1791269638084,
       "tag": "0011_panoramic_beast",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1795484115289,
+      "tag": "0012_add_rubric_scores",
+      "breakpoints": true
     }
   ]
 }

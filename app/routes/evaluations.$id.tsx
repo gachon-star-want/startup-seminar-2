@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useActionData, useFetcher, useNavigation } from "react-router";
+import { Form, Link, useActionData, useFetcher, useNavigation } from "react-router";
 import type { Route } from "./+types/evaluations.$id";
-import { Form } from "react-router";
 import { requireAppContext } from "~/lib/context.server";
 import { EvaluationHub } from "~/modules/evaluations/index.server";
+import { EVAL_CRITERIA, SCORE_MAX, criterionField } from "~/modules/evaluations/rubric";
 import { MAX_EVAL_COMMENT_BYTES } from "~/lib/constants";
 import { fmtKST, ymdLabel } from "~/lib/time";
 import { IconArrowLeft } from "~/components/icons";
@@ -32,73 +32,42 @@ const byteLen = (s: string) => encoder.encode(s).length;
 const DRAFT_DEBOUNCE_MS = 600;
 
 /**
- * 0.5점 단위 별점 — 별 5개, 각 별의 좌/우 반쪽을 눌러 0.5씩 조절.
- * 반쪽이 투명 버튼이라 키보드·터치로도 고를 수 있고, 값은 hidden input으로 제출한다.
+ * 1~5점 선택 — 네이티브 라디오 버튼 5개. 선택 상태는 CSS(:checked)가 그리므로
+ * 스크립트 없이도 동작하고, 값은 라디오 자체가 제출한다.
  */
-function StarRating({
-  name,
-  ariaLabel,
-  defaultValue = 0,
-  clearable,
-  onChange,
+function ScorePicker({
+  teamId,
+  criterionKey,
+  label,
+  defaultValue,
+  onEdit,
 }: {
-  name: string;
-  ariaLabel: string;
+  teamId: string;
+  criterionKey: (typeof EVAL_CRITERIA)[number]["key"];
+  label: string;
   defaultValue?: number;
-  clearable?: boolean;
-  onChange?: () => void;
+  onEdit?: () => void;
 }) {
-  const [value, setValue] = useState(defaultValue);
-  const [hover, setHover] = useState(0);
-  const shown = hover || value;
-  const pick = (v: number) => {
-    setValue(v);
-    onChange?.();
-  };
+  const name = criterionField(criterionKey, teamId);
   return (
-    <div className="stars" role="group" aria-label={ariaLabel}>
-      <input type="hidden" name={name} value={value ? String(value) : ""} />
-      {[1, 2, 3, 4, 5].map((n) => (
-        <span key={n} className="stars__star">
-          <span className="stars__bg" aria-hidden>
-            ★
+    <div className="score-picker" role="radiogroup" aria-label={`${label} 점수`}>
+      {Array.from({ length: SCORE_MAX }, (_, i) => i + 1).map((n) => {
+        const id = `${name}-${n}`;
+        return (
+          <span key={n} className="score-picker__opt">
+            <input
+              type="radio"
+              id={id}
+              name={name}
+              value={n}
+              className="score-picker__input"
+              defaultChecked={defaultValue === n}
+              onChange={onEdit}
+            />
+            <label htmlFor={id}>{n}</label>
           </span>
-          <span
-            className="stars__fg"
-            aria-hidden
-            style={{ width: shown >= n ? "100%" : shown >= n - 0.5 ? "50%" : "0%" }}
-          >
-            ★
-          </span>
-          <button
-            type="button"
-            className="stars__half"
-            aria-label={`${n - 0.5}점`}
-            onClick={() => pick(n - 0.5)}
-            onMouseEnter={() => setHover(n - 0.5)}
-            onMouseLeave={() => setHover(0)}
-          />
-          <button
-            type="button"
-            className="stars__half stars__half--r"
-            aria-label={`${n}점`}
-            onClick={() => pick(n)}
-            onMouseEnter={() => setHover(n)}
-            onMouseLeave={() => setHover(0)}
-          />
-        </span>
-      ))}
-      {clearable && value > 0 ? (
-        <button
-          type="button"
-          className="stars__clear"
-          aria-label="별점 지우기"
-          title="별점 지우기"
-          onClick={() => pick(0)}
-        >
-          ✕
-        </button>
-      ) : null}
+        );
+      })}
     </div>
   );
 }
@@ -141,7 +110,7 @@ function CommentBox({
   );
 }
 
-/** 발표 카드 — 제출물 내용은 항상, 평가 입력은 폼 안에서만. status가 주어지면 입력 대신 안내문 */
+/** 발표 카드 — 발표 자료는 항상, 평가 입력은 폼 안에서만. status가 주어지면 입력 대신 안내문 */
 function EvaluationCard({
   t,
   index,
@@ -160,7 +129,7 @@ function EvaluationCard({
           <strong className="card__title">
             {index + 1}. {t.label}
           </strong>
-          {t.my ? <Badge tone="green">평가 완료 ★{t.my.star}</Badge> : null}
+          {t.evaluated ? <Badge tone="green">평가 완료</Badge> : null}
         </div>
         <span className="small faint">발표자: {t.presenter}</span>
       </div>
@@ -212,53 +181,41 @@ function EvaluationCard({
       ) : (
         <>
           <input type="hidden" name="teamId" value={t.teamId} />
-          <div className="eval-sheet mt-3">
-          <div className="eval-sheet__row">
-            <div className="eval-sheet__label">팀 평가</div>
-            <div className="eval-sheet__body">
-              <StarRating
-                name={`teamScore_${t.teamId}`}
-                ariaLabel={`${t.label} 별점`}
-                defaultValue={t.my?.star ?? 0}
-                onChange={onEdit}
-              />
-            </div>
-          </div>
-          <div className="eval-sheet__row">
-            <div className="eval-sheet__label">팀 코멘트</div>
-            <div className="eval-sheet__body">
+          <div className="eval-crit mt-3">
+            {EVAL_CRITERIA.map((c) => (
+              <div key={c.key} className="crit">
+                <div className="crit__text">
+                  <div className="crit__head">
+                    <span className="crit__label">{c.label}</span>
+                    <span className="crit__weight num">{c.weight}</span>
+                  </div>
+                  <p className="crit__desc">{c.desc}</p>
+                </div>
+                <ScorePicker
+                  teamId={t.teamId}
+                  criterionKey={c.key}
+                  label={c.label}
+                  defaultValue={t.mine?.scores[c.key]}
+                  onEdit={onEdit}
+                />
+              </div>
+            ))}
+            <div className="crit">
+              <div className="crit__text">
+                <div className="crit__head">
+                  <span className="crit__label">코멘트</span>
+                  <span className="crit__weight crit__weight--opt">선택</span>
+                </div>
+                <p className="crit__desc">발표에 남기고 싶은 말이 있다면 적어 주세요</p>
+              </div>
               <CommentBox
                 id={`team-comment-${t.teamId}`}
                 name={`teamComment_${t.teamId}`}
-                defaultValue={t.my?.comment}
-                placeholder="발표에 대한 코멘트를 남겨주세요 (선택)"
+                defaultValue={t.mine?.comment}
+                placeholder="코멘트를 남겨주세요 (선택)"
                 onEdit={onEdit}
               />
             </div>
-          </div>
-          {t.members.length > 0 ? (
-            <div className="eval-sheet__row">
-              <div className="eval-sheet__label">개별 평가</div>
-              <div className="eval-sheet__body">
-                <div className="stack-sm">
-                  {t.members.map((m) => (
-                    <div key={m.userId} className="eval-sheet__member">
-                      <input type="hidden" name={`memberIds_${t.teamId}`} value={m.userId} />
-                      <span className="eval-sheet__member-name">{m.name}</span>
-                      <StarRating
-                        name={`memberScore_${t.teamId}_${m.userId}`}
-                        ariaLabel={`${t.label} — ${m.name} 별점`}
-                        defaultValue={m.my?.star ?? 0}
-                        clearable
-                        onChange={onEdit}
-                      />
-                    </div>
-                  ))}
-                </div>
-                <p className="hint">점수를 줄 팀원에게만 별점을 눌러도 돼요.</p>
-              </div>
-            </div>
-          ) : null}
           </div>
         </>
       )}
@@ -275,13 +232,13 @@ export default function EvaluationSessionRoute({ loaderData }: Route.ComponentPr
 
   const s = loaderData.session;
   const targets = loaderData.targets;
-  const doneCount = targets.filter((t) => t.my).length;
+  const doneCount = targets.filter((t) => t.evaluated).length;
   const submitting = navigation.state === "submitting";
   const canEvaluate = s.phase === "open";
 
   useEffect(() => () => clearTimeout(draftTimer.current), []);
 
-  /** 입력이 멈추면 폼 전체를 임시 저장한다 — 별점을 고른 팀만 서버에 반영된다 */
+  /** 입력이 멈추면 폼 전체를 임시 저장한다 — 점수를 조금이라도 고른 팀이 서버에 반영된다 */
   const queueDraftSave = () => {
     clearTimeout(draftTimer.current);
     draftTimer.current = setTimeout(() => {
@@ -354,7 +311,7 @@ export default function EvaluationSessionRoute({ loaderData }: Route.ComponentPr
               {submitting ? "제출 중..." : "제출"}
             </button>
             <p className="hint">
-              별점을 고르면 자동으로 임시 저장돼요. 제출을 누르면 최종 제출이에요.
+              점수를 고르면 자동으로 임시 저장돼요. 모든 팀의 5개 항목에 점수를 다 매긴 뒤 제출을 눌러 주세요.
             </p>
           </div>
         </Form>
@@ -368,8 +325,8 @@ export default function EvaluationSessionRoute({ loaderData }: Route.ComponentPr
               status={
                 s.phase === "scheduled"
                   ? "평가 기간이 되면 이곳에서 평가할 수 있어요."
-                  : t.my
-                    ? `평가 완료 — ★${t.my.star}`
+                  : t.evaluated
+                    ? "평가를 완료했어요."
                     : "평가 기간이 마감되어 제출할 수 없어요."
               }
             />

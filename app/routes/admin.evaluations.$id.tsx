@@ -3,6 +3,7 @@ import { Form, Link, redirect, useActionData } from "react-router";
 import type { Route } from "./+types/admin.evaluations.$id";
 import { requireAdminAppContext } from "~/lib/context.server";
 import { EvaluationHub } from "~/modules/evaluations/index.server";
+import { EVAL_CRITERIA } from "~/modules/evaluations/rubric";
 import { fmtKST, ymdLabel } from "~/lib/time";
 import { IconArrowLeft } from "~/components/icons";
 import { Badge, Card, EmptyState, ErrorText, Field, SectionTitle } from "~/components/ui";
@@ -47,8 +48,20 @@ const phaseLabel = { scheduled: "평가 예정", open: "평가 중", closed: "�
 
 export default function AdminEvaluationDetailRoute({ loaderData }: Route.ComponentProps) {
   const actionData = useActionData<typeof action>();
-  const { session: s, targets, evaluators, matrix, commentGroups } = loaderData.detail;
+  const { session: s, targets, evaluators, matrix, commentGroups, memberStats, rubric } =
+    loaderData.detail;
   const [isEditing, setIsEditing] = useState(false);
+
+  // 루브릭(5개 항목) 세션인지, 루브릭 도입 전 별점 세션인지
+  const isRubric = rubric === "criteria";
+  const teamRowCount = loaderData.detail.rows.filter((r) => r.kind === "team").length;
+  const memberRowCount = loaderData.detail.rows.filter((r) => r.kind === "member").length;
+  const hasResult = matrix.evaluators.length > 0;
+
+  // 최종 점수 순위 — 점수 내림차순, 같은 점수는 같은 순위. 평가자가 없는 팀은 순위 없음
+  const ranked = [...targets].sort(
+    (a, b) => b.avgStar - a.avgStar || a.label.localeCompare(b.label, "ko")
+  );
 
   return (
     <div className="stack-xl">
@@ -205,25 +218,27 @@ export default function AdminEvaluationDetailRoute({ loaderData }: Route.Compone
         </Card>
       ) : null}
 
-      {/* 팀별 별점 현황 (팀×평가자 매트릭스) */}
+      {/* 팀×평가자 매트릭스 — 셀은 평가자가 준 점수, 오른쪽 고정 열에 팀 최종 점수 */}
       <Card className="card--flush">
         <div className="card__head card__head--flush">
-          <h2 className="card__title">📊 팀별 별점 현황 (5점 만점)</h2>
+          <h2 className="card__title">
+            {isRubric ? "📊 팀별 점수 현황 (5점 만점)" : "📊 팀별 별점 현황 (5점 만점)"}
+          </h2>
           <p className="small faint num">
-            팀 평가 {loaderData.detail.rows.filter((r) => r.kind === "team").length}건 · 개인 평가{" "}
-            {loaderData.detail.rows.filter((r) => r.kind === "member").length}건 · 참여 {evaluators.length}명
+            팀 평가 {teamRowCount}건{memberRowCount > 0 ? ` · 개인 평가 ${memberRowCount}건` : ""} · 참여{" "}
+            {evaluators.length}명
           </p>
         </div>
         {targets.length === 0 ? (
           <p className="small muted" style={{ padding: "1rem 1rem 1.25rem" }}>
-            평가 대상 과제가 연결되지 않았어요.
+            평가 대상 팀이 없어요.
           </p>
-        ) : matrix.evaluators.length === 0 ? (
+        ) : !hasResult ? (
           <EmptyState>아직 제출된 평가가 없어요.</EmptyState>
         ) : (
           <>
             <div className="table-wrap">
-              <table className="table table--matrix">
+              <table className={`table table--matrix${isRubric ? " table--matrix--final" : ""}`}>
                 <thead>
                   <tr>
                     <th className="mx-sticky mx-l1">발표</th>
@@ -236,8 +251,8 @@ export default function AdminEvaluationDetailRoute({ loaderData }: Route.Compone
                         </span>
                       </th>
                     ))}
-                    <th className="mx-sticky mx-sum">총점</th>
-                    <th className="mx-sticky mx-avg">평균</th>
+                    <th className="mx-sticky mx-sum">{isRubric ? "평가자" : "총점"}</th>
+                    <th className="mx-sticky mx-avg">{isRubric ? "최종 점수" : "평균"}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -246,30 +261,86 @@ export default function AdminEvaluationDetailRoute({ loaderData }: Route.Compone
                       <td className="mx-sticky mx-l1">{t.label}</td>
                       <td className="mx-sticky mx-l2 small muted">{t.presenter}</td>
                       {matrix.evaluators.map((ev) => {
-                        const star = matrix.scores[`${ev.userId}:${t.teamId}`];
-                        return star === undefined ? (
+                        const score = matrix.scores[`${ev.userId}:${t.teamId}`];
+                        return score === undefined ? (
                           <td key={ev.userId} className="mx-cell mx-cell--empty">
                             —
                           </td>
                         ) : (
                           <td key={ev.userId} className="mx-cell num">
-                            {star.toFixed(1)}
+                            {score.toFixed(1)}
                           </td>
                         );
                       })}
-                      <td className="mx-sticky mx-sum num">{t.totalStar.toFixed(1)}</td>
-                      <td className="mx-sticky mx-avg num">{t.avgStar.toFixed(1)}</td>
+                      <td className="mx-sticky mx-sum num">
+                        {isRubric ? t.evaluatorCount : t.totalStar.toFixed(1)}
+                      </td>
+                      <td className="mx-sticky mx-avg num">{t.avgStar.toFixed(isRubric ? 2 : 1)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
             <p className="small faint matrix-legend">
-              셀 숫자 = 평가자가 준 별점 · — = 미평가 · 총점은 별점 합계
+              {isRubric
+                ? "셀 숫자 = 평가자가 준 총점(5개 항목을 배점 20·20·20·30·10 비율로 가중, 5점 만점) · — = 미평가 · 최종 점수 = 평가자 총점의 평균"
+                : "셀 숫자 = 평가자가 준 별점 · — = 미평가 · 총점은 별점 합계"}
             </p>
           </>
         )}
       </Card>
+
+      {/* 최종 점수 순위 + 항목별 평균 — 루브릭 세션만 */}
+      {isRubric ? (
+        <Card className="card--flush">
+          <div className="card__head card__head--flush">
+            <h2 className="card__title">🏆 최종 점수 순위 · 항목별 평균 (5점 만점)</h2>
+            <p className="small faint">최종 점수 = 평가자 총점의 평균 · 괄호는 배점</p>
+          </div>
+          {!hasResult ? (
+            <EmptyState>아직 제출된 평가가 없어요.</EmptyState>
+          ) : (
+            <div className="table-wrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>순위</th>
+                    <th>발표</th>
+                    <th>발표자</th>
+                    <th className="rank-num">평가자</th>
+                    {EVAL_CRITERIA.map((c) => (
+                      <th key={c.key} className="rank-num">
+                        {c.label} <span className="faint">({c.weight})</span>
+                      </th>
+                    ))}
+                    <th className="rank-num">최종 점수</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ranked.map((t) => (
+                    <tr key={t.teamId}>
+                      <td className="rank-num">
+                        {t.evaluatorCount > 0 ? ranked.findIndex((x) => x.avgStar === t.avgStar) + 1 : "—"}
+                      </td>
+                      <td>{t.label}</td>
+                      <td className="small muted">{t.presenter}</td>
+                      <td className="rank-num">{t.evaluatorCount}</td>
+                      {t.criteriaAvg.map((v, i) => (
+                        <td key={i} className="rank-num">
+                          {v === null ? "—" : v.toFixed(2)}
+                        </td>
+                      ))}
+                      <td className={`rank-num${t.evaluatorCount > 0 ? " rank-final" : ""}`}>
+                        {t.evaluatorCount > 0 ? t.avgStar.toFixed(2) : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      ) : null}
 
       {/* 팀별 코멘트 — 평가 원본 대신 팀 단위로 묶어 표시 (전체 원본은 XLSX) */}
       {commentGroups.length > 0 ? (
@@ -296,8 +367,8 @@ export default function AdminEvaluationDetailRoute({ loaderData }: Route.Compone
         </Card>
       ) : null}
 
-      {/* 팀원별 평균 */}
-      {loaderData.detail.memberStats.length > 0 ? (
+      {/* 팀원별 평균 — 루브릭 도입 전 세션의 팀원 개별 별점 */}
+      {memberStats.length > 0 ? (
         <Card className="card--flush">
           <div className="card__head card__head--flush">
             <h2 className="card__title">👤 팀원별 평균 별점 (5점 만점)</h2>
@@ -313,7 +384,7 @@ export default function AdminEvaluationDetailRoute({ loaderData }: Route.Compone
                 </tr>
               </thead>
               <tbody>
-                {loaderData.detail.memberStats.map((m) => (
+                {memberStats.map((m) => (
                   <tr key={`${m.teamLabel}-${m.name}`}>
                     <td>{m.teamLabel}</td>
                     <td>{m.name}</td>

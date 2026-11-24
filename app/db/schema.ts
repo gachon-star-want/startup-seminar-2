@@ -206,7 +206,10 @@ export const presentationSessions = sqliteTable("presentation_sessions", {
   createdAt: timestamp("created_at").$defaultFn(now).notNull(),
 });
 
-/** 발표(팀) 단위 평가 — 별점 0.5~5.0(0.5 단위) + 코멘트(300바이트)
+/** 발표(팀) 단위 평가 — 학생 1명이 세션 1개의 팀 1개에 남기는 기록.
+ *  루브릭(2026-11-24~): 항목별 점수 5개(1~5 정수) + 배점 가중 총점(1.0~5.0) + 코멘트(2500바이트).
+ *  5개 항목이 다 채워지지 않은 임시 저장은 star_score = 0 (통계에서 제외).
+ *  루브릭 이전 세션: 항목 점수 없이 별점(0.5~5.0)만.
  *  대상은 제출물이 아니라 "팀" 기준 — 제출물 없는 새 팀도 평가 목록에 포함된다.
  *  submissionId는 해당 팀의 대표 제출물(최신) 참조이며 없을 수도 있다(null). */
 export const presentationEvaluations = sqliteTable(
@@ -225,7 +228,15 @@ export const presentationEvaluations = sqliteTable(
     evaluatorId: uuid("evaluator_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    starScore: real("star_score").notNull(), // 별 5개 만점, 0.5개 단위
+    // 루브릭 평가(5개 항목)에서는 배점 비율로 가중한 총점(1.0~5.0).
+    // 루브릭 도입 전(2026-11-24 이전 세션)의 별점 평가 행은 별점(0.5~5.0) 그대로이다.
+    starScore: real("star_score").notNull(),
+    // 5개 항목 점수(1~5 정수) — 별점 시절 행은 모두 null
+    scoreUsp: integer("score_usp"),
+    scoreMatch: integer("score_match"),
+    scoreMedia: integer("score_media"),
+    scoreData: integer("score_data"),
+    scoreDelivery: integer("score_delivery"),
     comment: text("comment"), // 최대 2500바이트 (앱에서 검증)
     createdAt: timestamp("created_at").$defaultFn(now).notNull(),
     updatedAt: timestamp("updated_at").$defaultFn(now).notNull(),

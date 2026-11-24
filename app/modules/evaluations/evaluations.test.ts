@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { EvaluationHub } from "./evaluations.server";
+import { EVAL_CRITERIA, criterionField, mean, weightedTotal } from "./rubric";
+import type { CriterionKey } from "./rubric";
 import { phaseOf } from "./types";
 import { MAX_EVAL_COMMENT_BYTES } from "~/lib/constants";
 
@@ -14,28 +16,84 @@ describe("phaseOf", () => {
   });
 });
 
-describe("EvaluationHub.parseStar", () => {
-  it("should accept 0.5-step scores from 0.5 to 5", () => {
-    for (const v of [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5]) {
-      const form = new FormData();
-      form.set("teamScore", String(v));
-      const res = EvaluationHub.parseStar(form, "teamScore");
-      expect(res.ok).toBe(true);
-      if (res.ok) expect(res.star).toBe(v);
+describe("루브릭 — 배점 가중 총점 (5점 만점)", () => {
+  it("5개 항목은 배점 20·20·20·30·10으로 합이 100이다", () => {
+    expect(EVAL_CRITERIA).toHaveLength(5);
+    expect(EVAL_CRITERIA.reduce((s, c) => s + c.weight, 0)).toBe(100);
+  });
+
+  it("배점 비율대로 가중해 1.0~5.0 총점을 낸다", () => {
+    // (5×20 + 4×20 + 3×20 + 2×30 + 5×10) / 100 = 3.5
+    expect(weightedTotal({ usp: 5, match: 4, media: 3, data: 2, delivery: 5 })).toBe(3.5);
+    expect(weightedTotal({ usp: 1, match: 1, media: 1, data: 1, delivery: 1 })).toBe(1);
+    expect(weightedTotal({ usp: 5, match: 5, media: 5, data: 5, delivery: 5 })).toBe(5);
+  });
+
+  it("배점이 큰 항목(데이터 진단 30)이 총점에 더 크게 반영된다", () => {
+    // 데이터만 5점 → (1×20 + 1×20 + 1×20 + 5×30 + 1×10) / 100 = 2.2
+    expect(weightedTotal({ usp: 1, match: 1, media: 1, data: 5, delivery: 1 })).toBe(2.2);
+    // 시간 준수(10)만 5점 → 1.4
+    expect(weightedTotal({ usp: 1, match: 1, media: 1, data: 1, delivery: 5 })).toBe(1.4);
+  });
+
+  it("5개 항목이 다 채워지지 않으면 총점을 내지 않는다", () => {
+    expect(weightedTotal({ usp: 5, match: 5, media: 5, data: 5 })).toBeNull();
+    expect(weightedTotal({ usp: 5, match: 5, media: 5, data: 5, delivery: null })).toBeNull();
+    expect(weightedTotal({ usp: 5, match: 5, media: 5, data: 5, delivery: 6 })).toBeNull();
+    expect(weightedTotal({ usp: 5, match: 5, media: 5, data: 5, delivery: 4.5 })).toBeNull();
+    expect(weightedTotal({})).toBeNull();
+  });
+});
+
+describe("팀 최종 점수 — 평가자 총점의 평균", () => {
+  it("평가자 10명이 준 총점의 평균이 팀 최종 점수다", () => {
+    const totals = [4.2, 3.5, 5, 2.8, 3.9, 4.4, 3.1, 4.7, 2.5, 4.9]; // 합 39.0
+    expect(mean(totals)).toBe(3.9);
+    expect(mean([3.5, 4.2])).toBe(3.85);
+    expect(mean([3.333, 3.334])).toBe(3.33);
+    expect(mean([])).toBe(0);
+  });
+});
+
+describe("EvaluationHub.readCriterionScores", () => {
+  const make = (values: Partial<Record<CriterionKey, string>>) => {
+    const form = new FormData();
+    for (const [key, v] of Object.entries(values)) form.set(criterionField(key as CriterionKey, "t1"), v);
+    return form;
+  };
+  const full = { usp: "1", match: "2", media: "3", data: "4", delivery: "5" };
+
+  it("팀별 5개 항목 점수를 1~5 정수로 읽는다", () => {
+    const res = EvaluationHub.readCriterionScores(make(full), "t1");
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.scores).toEqual({ usp: 1, match: 2, media: 3, data: 4, delivery: 5 });
+      expect(res.picked).toBe(5);
     }
   });
 
-  it("should reject out-of-range, non-half-step and missing scores", () => {
-    const make = (v: string | null) => {
-      const form = new FormData();
-      if (v !== null) form.set("teamScore", v);
-      return form;
-    };
-    expect(EvaluationHub.parseStar(make("0"), "teamScore").ok).toBe(false);
-    expect(EvaluationHub.parseStar(make("5.5"), "teamScore").ok).toBe(false);
-    expect(EvaluationHub.parseStar(make("2.3"), "teamScore").ok).toBe(false);
-    expect(EvaluationHub.parseStar(make("abc"), "teamScore").ok).toBe(false);
-    expect(EvaluationHub.parseStar(make(null), "teamScore").ok).toBe(false);
+  it("비어 있는 항목은 건너뛴다 (부분 입력)", () => {
+    const res = EvaluationHub.readCriterionScores(make({ usp: "3", data: "5" }), "t1");
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.scores).toEqual({ usp: 3, data: 5 });
+      expect(res.picked).toBe(2);
+    }
+    const none = EvaluationHub.readCriterionScores(new FormData(), "t1");
+    expect(none.ok).toBe(true);
+    if (none.ok) expect(none.picked).toBe(0);
+  });
+
+  it("범위 밖·정수가 아닌 값은 거절한다", () => {
+    for (const bad of ["0", "6", "2.5", "abc", "-1"]) {
+      expect(EvaluationHub.readCriterionScores(make({ ...full, data: bad }), "t1").ok).toBe(false);
+    }
+  });
+
+  it("다른 팀의 필드는 읽지 않는다", () => {
+    const res = EvaluationHub.readCriterionScores(make(full), "t2");
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.picked).toBe(0);
   });
 });
 

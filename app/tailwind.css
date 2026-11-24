@@ -2062,124 +2062,133 @@ select.input {
   display: none !important;
 }
 
-/* ---------- 발표 평가 — 평가지 표 레이아웃 ---------- */
-.eval-sheet {
+/* ---------- 발표 평가 — 5개 항목 점수(1~5) 입력 ---------- */
+.eval-crit {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   overflow: hidden;
 }
 
-.eval-sheet__row {
-  display: grid;
-  grid-template-columns: 6.5rem minmax(0, 1fr);
+/* 항목 한 줄: 왼쪽 텍스트(항목·배점·설명), 오른쪽 점수 버튼 */
+.crit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  padding: 0.75rem 0.875rem;
 }
 
-.eval-sheet__row + .eval-sheet__row {
+.crit + .crit {
   border-top: 1px solid var(--border);
 }
 
-.eval-sheet__label {
+.crit__text {
+  flex: 1 1 15rem;
+  min-width: 0;
+}
+
+.crit > .field {
+  flex: 1 1 18rem;
+  min-width: 0;
+  margin: 0;
+}
+
+.crit__head {
   display: flex;
   align-items: center;
-  padding: 0.625rem 0.75rem;
-  background: var(--surface-2);
-  border-right: 1px solid var(--border);
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.crit__label {
   font-size: var(--t-sm);
   font-weight: 700;
   color: var(--text);
 }
 
-.eval-sheet__body {
-  padding: 0.625rem 0.875rem;
-  min-width: 0;
+/* 배점(코멘트 행은 '선택') 표시 */
+.crit__weight {
+  padding: 0.0625rem 0.5rem;
+  border-radius: var(--radius-full);
+  background: var(--surface-3);
+  color: var(--text-2);
+  font-size: var(--t-xs);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 
-.eval-sheet__body .field {
-  margin-top: 0;
+.crit__weight--opt {
+  color: var(--text-3);
 }
 
-.eval-sheet__member {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  flex-wrap: wrap;
+.crit__desc {
+  margin-top: 0.125rem;
+  font-size: var(--t-xs);
+  line-height: 1.45;
+  color: var(--text-2);
 }
 
-.eval-sheet__member-name {
-  font-size: var(--t-sm);
-  font-weight: 600;
-  min-width: 5rem;
-}
-
-/* ---------- 0.5 단위 별점 위젯 ---------- */
-.stars {
-  display: flex;
-  align-items: center;
-  gap: 0.125rem;
-}
-
-.stars__star {
+/* 1~5점 — 네이티브 라디오. 입력은 화면에서 숨기고 바로 뒤의 라벨이 버튼처럼 보인다 */
+.score-picker {
   position: relative;
-  display: inline-block;
-  line-height: 1;
+  display: flex;
+  gap: 0.375rem;
+  margin-left: auto;
 }
 
-.stars__bg,
-.stars__fg {
-  font-size: 1.875rem;
-  line-height: 1;
-}
-
-.stars__bg {
-  color: var(--surface-3);
-}
-
-.stars__fg {
+.score-picker__input {
   position: absolute;
-  inset: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  color: var(--warning-solid);
+  width: 1px;
+  height: 1px;
+  opacity: 0;
   pointer-events: none;
 }
 
-/* 반쪽 버튼 — 내용 없는 투명 버튼으로 좌/우 클릭 영역을 나눈다 */
-.stars__half {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 50%;
-  height: 100%;
-  border: none;
-  background: none;
-  padding: 0;
+.score-picker label {
+  display: grid;
+  place-items: center;
+  min-width: 2.75rem;
+  height: 2.75rem;
+  padding: 0 0.625rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: var(--t-md);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
   cursor: pointer;
-  z-index: 1;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: background-color 0.12s, border-color 0.12s, color 0.12s, transform 0.06s;
 }
 
-.stars__half--r {
-  left: 50%;
+.score-picker label:hover {
+  border-color: var(--primary-border);
+  color: var(--primary);
 }
 
-.stars__half:focus-visible {
+.score-picker label:active {
+  transform: scale(0.96);
+}
+
+.score-picker__input:checked + label {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--on-primary);
+}
+
+.score-picker__input:focus-visible + label {
   outline: 2px solid var(--primary);
   outline-offset: 2px;
-  border-radius: 4px;
 }
 
-.stars__clear {
-  margin-left: 0.375rem;
-  border: none;
-  background: none;
-  color: var(--text-3);
-  font-size: 0.8125rem;
-  cursor: pointer;
-  padding: 0.25rem 0.375rem;
-  border-radius: var(--radius-sm);
-}
-
-.stars__clear:hover {
-  color: var(--danger);
+/* 좁은 화면 — 점수 버튼 5개가 텍스트 아래 줄을 가득 채운다 */
+@media (max-width: 639px) {
+  .score-picker {
+    flex: 1 1 100%;
+    justify-content: space-between;
+  }
 }
 
 /* ---------- 평가 한 번에 제출 ---------- */
@@ -2305,6 +2314,28 @@ select.input {
 
 .matrix-legend {
   padding: 0.625rem 1rem 0.875rem;
+}
+
+/* 루브릭 세션 — 오른쪽 고정 열이 '평가자 · 최종 점수'라 제목이 길어 넓힌다 */
+.table--matrix--final .mx-sum {
+  right: 6rem;
+  min-width: 4.5rem;
+}
+
+.table--matrix--final .mx-avg {
+  min-width: 6rem;
+}
+
+/* 순위 표 — 점수 셀은 우측 정렬·고정폭 숫자 */
+.rank-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.rank-final {
+  font-weight: 700;
+  color: var(--primary);
 }
 
 /* ---------- 관리자: 팀별 코멘트 그룹 ---------- */
