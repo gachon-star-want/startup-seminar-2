@@ -16,6 +16,7 @@
     "db:seed": "node scripts/seed.mjs",
     "db:seed:users": "node scripts/seed-users.mjs",
     "db:seed:local": "node scripts/seed.mjs --local && node scripts/seed-users.mjs --local",
+    "report": "node scripts/report/build-report.mjs",
     "test": "vitest run"
   },
   "dependencies": {

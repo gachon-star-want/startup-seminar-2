@@ -10,3 +10,4 @@ dist
 .zcode
 .neon
 worker-startup.cpuprofile
+*.pdf
